@@ -1,8 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { displayName } from '@/lib/stats'
+import { Toast } from '@/components/shared/Toast'
 import type { Player, Session } from '@/lib/types'
 
 interface GamePlayerRow {
@@ -21,11 +22,20 @@ interface GameRow {
   game_players: GamePlayerRow[]
 }
 
+type ToastState = { message: string; type: 'success' | 'error'; key: number }
+
 export default function SessionDetailPage({ params }: { params: { id: string } }) {
   const [session, setSession] = useState<Session | null>(null)
   const [games, setGames] = useState<GameRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState<GameRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [toast, setToast] = useState<ToastState | null>(null)
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type, key: Date.now() })
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -51,6 +61,25 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     }
     void load()
   }, [params.id])
+
+  async function handleDelete() {
+    if (!confirmDelete) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/games/${confirmDelete.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json() as { error: string }
+        throw new Error(data.error)
+      }
+      setGames((prev) => prev.filter((g) => g.id !== confirmDelete.id))
+      showToast(`Game ${confirmDelete.game_number} deleted`)
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete game', 'error')
+    } finally {
+      setDeleting(false)
+      setConfirmDelete(null)
+    }
+  }
 
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-500">Loading…</div>
   if (error || !session) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-red-400">{error || 'Not found'}</div>
@@ -91,9 +120,18 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               <div key={game.id} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-sm font-bold text-zinc-500">Game {game.game_number}</span>
-                  <span className={`text-2xl font-black ${winnerColor}`}>
-                    {game.team1_score} – {game.team2_score}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-2xl font-black ${winnerColor}`}>
+                      {game.team1_score} – {game.team2_score}
+                    </span>
+                    <button
+                      onClick={() => setConfirmDelete(game)}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-red-950/50 hover:text-red-400"
+                      aria-label={`Delete game ${game.game_number}`}
+                    >
+                      <TrashIcon />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -139,6 +177,53 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           )}
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div className="w-full max-w-sm rounded-2xl bg-zinc-900 p-6 shadow-xl">
+            <h2 className="mb-2 text-lg font-bold text-white">
+              Delete Game {confirmDelete.game_number}?
+            </h2>
+            <p className="mb-6 text-sm text-zinc-400">
+              This will remove all player records for this game and cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+                className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 rounded-xl bg-red-600 py-3 font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <Toast
+          key={toast.key}
+          message={toast.message}
+          type={toast.type}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </main>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M2 4h12M5 4V2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4M6 7v5M10 7v5M3 4l1 9.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5L13 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   )
 }
