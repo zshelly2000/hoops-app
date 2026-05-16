@@ -41,8 +41,8 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     async function load() {
       try {
         const [sessRes, gamesRes] = await Promise.all([
-          fetch(`/api/sessions/${params.id}`),
-          fetch(`/api/sessions/${params.id}/games`),
+          fetch(`/api/sessions/${params.id}`, { cache: 'no-store' }),
+          fetch(`/api/sessions/${params.id}/games`, { cache: 'no-store' }),
         ])
 
         if (!sessRes.ok) throw new Error('Session not found')
@@ -71,7 +71,11 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
         const data = await res.json() as { error: string }
         throw new Error(data.error)
       }
-      setGames((prev) => prev.filter((g) => g.id !== confirmDelete.id))
+      const refreshed = await fetch(`/api/sessions/${params.id}/games`, { cache: 'no-store' })
+      if (refreshed.ok) {
+        const g = await refreshed.json() as GameRow[]
+        setGames(g)
+      }
       showToast(`Game ${confirmDelete.game_number} deleted`)
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to delete game', 'error')

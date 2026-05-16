@@ -1,10 +1,8 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -26,7 +24,7 @@ export default function LoginPage() {
         return
       }
 
-      router.replace('/courtside')
+      window.location.replace('/courtside')
     } catch {
       setError('Something went wrong. Try again.')
     } finally {
