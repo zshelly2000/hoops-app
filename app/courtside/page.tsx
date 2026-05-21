@@ -1,8 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { PlayerGrid } from '@/components/courtside/PlayerGrid'
-import { TeamBuilder } from '@/components/courtside/TeamBuilder'
+import { ThreeColumnAssigner } from '@/components/courtside/ThreeColumnAssigner'
 import { ScoreEntry } from '@/components/courtside/ScoreEntry'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
 import { Toast } from '@/components/shared/Toast'
@@ -86,25 +85,14 @@ export default function CourtsidePage() {
     void init()
   }, [])
 
-  function handleToggle(playerId: string) {
+  function handleAssign(playerId: string, target: TeamSlot | null) {
     setSelections((prev) => {
       const next = new Map(prev)
-      const current = next.get(playerId)
-      if (!current) {
-        next.set(playerId, 1)
-      } else if (current === 1) {
-        next.set(playerId, 2)
-      } else {
+      if (target === null) {
         next.delete(playerId)
+      } else {
+        next.set(playerId, target)
       }
-      return next
-    })
-  }
-
-  function handleRemove(playerId: string) {
-    setSelections((prev) => {
-      const next = new Map(prev)
-      next.delete(playerId)
       return next
     })
   }
@@ -265,11 +253,12 @@ export default function CourtsidePage() {
           </div>
         ) : (
           <div className="flex flex-col gap-5">
-            {/* Team display */}
-            <TeamBuilder
+            {/* Three-column player assigner */}
+            <ThreeColumnAssigner
               players={players}
               selections={selections}
-              onRemove={handleRemove}
+              lastPlayed={lastPlayed}
+              onAssign={handleAssign}
             />
 
             {/* Score */}
@@ -288,19 +277,6 @@ export default function CourtsidePage() {
             >
               {submitting ? 'Saving…' : 'Submit Game'}
             </button>
-
-            {/* Player grid */}
-            <div>
-              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
-                Players — tap to assign
-              </h2>
-              <PlayerGrid
-                players={players}
-                selections={selections}
-                lastPlayed={lastPlayed}
-                onToggle={handleToggle}
-              />
-            </div>
           </div>
         )}
       </div>
