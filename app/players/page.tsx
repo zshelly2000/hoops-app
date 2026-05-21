@@ -16,7 +16,7 @@ export default function PlayersPage() {
   async function load() {
     setLoading(true)
     try {
-      const res = await fetch('/api/players')
+      const res = await fetch('/api/players', { cache: 'no-store' })
       if (!res.ok) throw new Error('Failed to load')
       const data = await res.json() as Player[]
       setPlayers(data)

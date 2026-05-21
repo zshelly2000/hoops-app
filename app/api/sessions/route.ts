@@ -1,8 +1,11 @@
-﻿export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import type { Session } from '@/lib/types'
+
+const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -14,10 +17,10 @@ export async function GET(request: Request) {
   const { data, error } = await query
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
   }
 
-  return NextResponse.json(data as unknown as Session[])
+  return NextResponse.json(data as unknown as Session[], { headers: NO_CACHE })
 }
 
 export async function POST(request: Request) {
@@ -42,11 +45,10 @@ export async function POST(request: Request) {
         .eq('session_date', body.session_date)
         .eq('location', body.location ?? 'McKinley Park')
         .single()
-      return NextResponse.json(existing as unknown as Session)
+      return NextResponse.json(existing as unknown as Session, { headers: NO_CACHE })
     }
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
   }
 
-  return NextResponse.json(data as unknown as Session, { status: 201 })
+  return NextResponse.json(data as unknown as Session, { status: 201, headers: NO_CACHE })
 }
-

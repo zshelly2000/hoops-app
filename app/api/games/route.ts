@@ -1,8 +1,11 @@
-﻿export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import type { Game } from '@/lib/types'
+
+const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 export async function POST(request: Request) {
   const body = await request.json() as {
@@ -16,12 +19,12 @@ export async function POST(request: Request) {
   const { session_id, team1_score, team2_score, team1_players, team2_players } = body
 
   if (!session_id || team1_players.length < 2 || team2_players.length < 2) {
-    return NextResponse.json({ error: 'Invalid game data' }, { status: 400 })
+    return NextResponse.json({ error: 'Invalid game data' }, { status: 400, headers: NO_CACHE })
   }
 
   const allPlayers = [...team1_players, ...team2_players]
   if (new Set(allPlayers).size !== allPlayers.length) {
-    return NextResponse.json({ error: 'A player cannot appear on both teams' }, { status: 400 })
+    return NextResponse.json({ error: 'A player cannot appear on both teams' }, { status: 400, headers: NO_CACHE })
   }
 
   // Get next game number
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
     .single()
 
   if (gameError) {
-    return NextResponse.json({ error: gameError.message }, { status: 500 })
+    return NextResponse.json({ error: gameError.message }, { status: 500, headers: NO_CACHE })
   }
 
   const game = gameData as unknown as Game
@@ -60,9 +63,8 @@ export async function POST(request: Request) {
 
   if (playersError) {
     await supabase.from('games').delete().eq('id', game.id)
-    return NextResponse.json({ error: playersError.message }, { status: 500 })
+    return NextResponse.json({ error: playersError.message }, { status: 500, headers: NO_CACHE })
   }
 
-  return NextResponse.json(game, { status: 201 })
+  return NextResponse.json(game, { status: 201, headers: NO_CACHE })
 }
-

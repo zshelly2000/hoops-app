@@ -1,7 +1,10 @@
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+
+const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 export async function GET(
   _req: Request,
@@ -26,8 +29,8 @@ export async function GET(
     .order('game_number')
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
   }
 
-  return NextResponse.json(data)
+  return NextResponse.json(data, { headers: NO_CACHE })
 }

@@ -2,8 +2,10 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { displayName } from '@/lib/stats'
 import { Toast } from '@/components/shared/Toast'
+import { usePullToRefresh } from '@/lib/usePullToRefresh'
 import type { Player, Session } from '@/lib/types'
 
 interface GamePlayerRow {
@@ -25,6 +27,7 @@ interface GameRow {
 type ToastState = { message: string; type: 'success' | 'error'; key: number }
 
 export default function SessionDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter()
   const [session, setSession] = useState<Session | null>(null)
   const [games, setGames] = useState<GameRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,30 +40,33 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     setToast({ message, type, key: Date.now() })
   }, [])
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [sessRes, gamesRes] = await Promise.all([
-          fetch(`/api/sessions/${params.id}`, { cache: 'no-store' }),
-          fetch(`/api/sessions/${params.id}/games`, { cache: 'no-store' }),
-        ])
+  const load = useCallback(async () => {
+    try {
+      const [sessRes, gamesRes] = await Promise.all([
+        fetch(`/api/sessions/${params.id}`, { cache: 'no-store' }),
+        fetch(`/api/sessions/${params.id}/games`, { cache: 'no-store' }),
+      ])
 
-        if (!sessRes.ok) throw new Error('Session not found')
-        const sess = await sessRes.json() as Session
-        setSession(sess)
+      if (!sessRes.ok) throw new Error('Session not found')
+      const sess = await sessRes.json() as Session
+      setSession(sess)
 
-        if (gamesRes.ok) {
-          const g = await gamesRes.json() as GameRow[]
-          setGames(g)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
-      } finally {
-        setLoading(false)
+      if (gamesRes.ok) {
+        const g = await gamesRes.json() as GameRow[]
+        setGames(g)
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error')
+    } finally {
+      setLoading(false)
     }
-    void load()
   }, [params.id])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const { isRefreshing } = usePullToRefresh(load)
 
   async function handleDelete() {
     if (!confirmDelete) return
@@ -71,12 +77,11 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
         const data = await res.json() as { error: string }
         throw new Error(data.error)
       }
-      const refreshed = await fetch(`/api/sessions/${params.id}/games`, { cache: 'no-store' })
-      if (refreshed.ok) {
-        const g = await refreshed.json() as GameRow[]
-        setGames(g)
-      }
+      // Remove deleted game from local state immediately (confirmed 2xx)
+      setGames((prev) => prev.filter((g) => g.id !== confirmDelete.id))
       showToast(`Game ${confirmDelete.game_number} deleted`)
+      // Bust router cache so sessions list reflects the auto-deleted session if applicable
+      router.refresh()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to delete game', 'error')
     } finally {
@@ -95,6 +100,13 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   return (
     <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
       <div className="mx-auto max-w-lg px-4">
+        {/* Pull-to-refresh indicator */}
+        {isRefreshing && (
+          <div className="flex justify-center pb-2">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+          </div>
+        )}
+
         <Link href="/sessions" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300">
           ← Sessions
         </Link>

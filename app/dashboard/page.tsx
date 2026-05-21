@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { LeaderboardTable } from '@/components/dashboard/LeaderboardTable'
 import { rankPlayers } from '@/lib/stats'
+import { usePullToRefresh } from '@/lib/usePullToRefresh'
 import type { PlayerStats } from '@/lib/types'
 
 export default function DashboardPage() {
@@ -13,48 +14,60 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      setError('')
-      try {
-        const [statsRes, sessionsRes] = await Promise.all([
-          fetch('/api/stats'),
-          fetch('/api/sessions'),
-        ])
+  // load() does NOT call setLoading(true) so pull-to-refresh can call it
+  // without triggering the full-page loading state.
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const [statsRes, sessionsRes] = await Promise.all([
+        fetch('/api/stats', { cache: 'no-store' }),
+        fetch('/api/sessions', { cache: 'no-store' }),
+      ])
 
-        if (!statsRes.ok) throw new Error('Failed to load stats')
-        const allStats = await statsRes.json() as PlayerStats[]
-        setStats(allStats)
+      if (!statsRes.ok) throw new Error('Failed to load stats')
+      const allStats = await statsRes.json() as PlayerStats[]
+      setStats(allStats)
 
-        if (sessionsRes.ok) {
-          const sessions = await sessionsRes.json() as { id: string }[]
-          setTotalSessions(sessions.length)
+      if (sessionsRes.ok) {
+        const sessions = await sessionsRes.json() as { id: string }[]
+        setTotalSessions(sessions.length)
 
-          // Count total games across all sessions
-          let gamesTotal = 0
-          allStats.forEach((s) => {
-            // games_played counts unique game appearances; total unique games = max games_played (rough)
-            // Better: use the max game_number from sessions via API
-          })
-          // Simple approach: sum wins+losses+ties for one player is their GP, but we need unique games
-          // We'll fetch a count from a separate endpoint or just use sessions count
-          setTotalGames(gamesTotal)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error loading data')
-      } finally {
-        setLoading(false)
+        // Count total games across all sessions
+        let gamesTotal = 0
+        allStats.forEach((s) => {
+          // games_played counts unique game appearances; total unique games = max games_played (rough)
+          // Better: use the max game_number from sessions via API
+        })
+        // Simple approach: sum wins+losses+ties for one player is their GP, but we need unique games
+        // We'll fetch a count from a separate endpoint or just use sessions count
+        setTotalGames(gamesTotal)
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error loading data')
+    } finally {
+      setLoading(false)
     }
-    void load()
   }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    void load()
+  }, [load])
+
+  const { isRefreshing } = usePullToRefresh(load)
 
   const filtered = rankPlayers(stats, minGames)
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
       <div className="mx-auto max-w-4xl px-4">
+        {/* Pull-to-refresh indicator */}
+        {isRefreshing && (
+          <div className="flex justify-center pb-2">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+          </div>
+        )}
+
         <div className="mb-6">
           <h1 className="text-2xl font-black text-white">Stats Dashboard</h1>
           <p className="text-sm text-zinc-500">

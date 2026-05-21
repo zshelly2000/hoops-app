@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ThreeColumnAssigner } from '@/components/courtside/ThreeColumnAssigner'
 import { ScoreEntry } from '@/components/courtside/ScoreEntry'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
@@ -23,6 +24,7 @@ type ToastState = { message: string; type: 'success' | 'error'; key: number }
 type KeepWinnersSheet = { winnerIds: string[]; gameNumber: number }
 
 export default function CourtsidePage() {
+  const router = useRouter()
   const [players, setPlayers] = useState<Player[]>([])
   const [lastPlayed, setLastPlayed] = useState<Record<string, string>>({})
   const [session, setSession] = useState<Session | null>(null)
@@ -111,6 +113,7 @@ export default function CourtsidePage() {
       const sess = await res.json() as Session
       setSession(sess)
       setGameCount(0)
+      router.refresh()
     } catch {
       showToast('Failed to start session', 'error')
     } finally {
@@ -159,6 +162,9 @@ export default function CourtsidePage() {
         const data = await res.json() as { error: string }
         throw new Error(data.error)
       }
+
+      // Bust router cache so sessions/dashboard pages reflect this game immediately
+      router.refresh()
 
       if (isTie) {
         showToast(`Game ${newCount} saved!`)

@@ -31,9 +31,9 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
       setLoading(true)
       try {
         const [playerRes, statsRes, gamesRes] = await Promise.all([
-          fetch(`/api/players/${params.id}`),
-          fetch('/api/stats'),
-          fetch(`/api/players/${params.id}/games`),
+          fetch(`/api/players/${params.id}`, { cache: 'no-store' }),
+          fetch('/api/stats', { cache: 'no-store' }),
+          fetch(`/api/players/${params.id}/games`, { cache: 'no-store' }),
         ])
 
         if (!playerRes.ok) throw new Error('Player not found')

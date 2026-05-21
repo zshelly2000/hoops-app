@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { usePullToRefresh } from '@/lib/usePullToRefresh'
 import type { Session } from '@/lib/types'
 
 export default function SessionsPage() {
@@ -9,25 +10,35 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('/api/sessions', { cache: 'no-store' })
-        if (!res.ok) throw new Error('Failed to load')
-        const data = await res.json() as Session[]
-        setSessions(data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error')
-      } finally {
-        setLoading(false)
-      }
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sessions', { cache: 'no-store' })
+      if (!res.ok) throw new Error('Failed to load')
+      const data = await res.json() as Session[]
+      setSessions(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error')
+    } finally {
+      setLoading(false)
     }
-    void load()
   }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const { isRefreshing } = usePullToRefresh(load)
 
   return (
     <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
       <div className="mx-auto max-w-lg px-4">
+        {/* Pull-to-refresh indicator */}
+        {isRefreshing && (
+          <div className="flex justify-center pb-2">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
+          </div>
+        )}
+
         <h1 className="mb-5 text-xl font-black text-white">Sessions</h1>
 
         {loading && <p className="py-10 text-center text-zinc-500">Loading…</p>}

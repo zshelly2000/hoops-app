@@ -1,7 +1,10 @@
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+
+const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 interface GamePlayerRow {
   id: string
@@ -39,7 +42,7 @@ export async function GET(
     .limit(100)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
   }
 
   const rows = (data as unknown as GamePlayerRow[]).map((gp) => {
@@ -63,5 +66,5 @@ export async function GET(
     }
   }).filter(Boolean)
 
-  return NextResponse.json(rows)
+  return NextResponse.json(rows, { headers: NO_CACHE })
 }
