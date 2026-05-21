@@ -67,6 +67,7 @@ function SwipeableTile({
 
   function handleTouchEnd(e: React.TouchEvent) {
     const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
     const tileWidth = tileRef.current?.offsetWidth ?? 115
     const threshold = tileWidth * 0.3   // 30% of tile width
 
@@ -80,7 +81,9 @@ function SwipeableTile({
     suppressNextClick.current = true
 
     if (!wasDragging.current) {
-      // Pure tap → cycle: bench→T1, T1→T2, T2→bench
+      // Tap → cycle: bench→T1, T1→T2, T2→bench
+      // Guard: if finger moved more than 8px in any direction it was a scroll, not a tap
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) return
       if (!assignment) onAssign(player.id, 1)
       else if (assignment === 1) onAssign(player.id, 2)
       else onAssign(player.id, null)
@@ -174,8 +177,18 @@ export function ThreeColumnAssigner({
     return shared
   }, [players])
 
-  // Apply search across all three columns simultaneously
-  const filtered = useMemo(() => {
+  // T1 and T2 always show all assigned players — search does NOT filter them
+  const team1Players = useMemo(
+    () => players.filter((p) => selections.get(p.id) === 1),
+    [players, selections],
+  )
+  const team2Players = useMemo(
+    () => players.filter((p) => selections.get(p.id) === 2),
+    [players, selections],
+  )
+
+  // Search filters the bench column only
+  const benchFiltered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return players
     return players.filter(
@@ -185,30 +198,20 @@ export function ThreeColumnAssigner({
     )
   }, [players, search])
 
-  // T1 and T2: only their assigned players
-  const team1Players = useMemo(
-    () => filtered.filter((p) => selections.get(p.id) === 1),
-    [filtered, selections],
-  )
-  const team2Players = useMemo(
-    () => filtered.filter((p) => selections.get(p.id) === 2),
-    [filtered, selections],
-  )
-
-  // Bench: all players in three tiers
+  // Bench: search-filtered players in three tiers
   //   1. unassigned + has play history → last_played desc
   //   2. unassigned + never played     → alphabetical
   //   3. assigned (ghost)              → bottom, opacity-40
   const benchPlayers = useMemo(() => {
-    const unassignedPlayed = filtered
+    const unassignedPlayed = benchFiltered
       .filter((p) => !selections.get(p.id) && lastPlayed[p.id])
       .sort((a, b) => lastPlayed[b.id].localeCompare(lastPlayed[a.id]))
-    const unassignedNeverPlayed = filtered
+    const unassignedNeverPlayed = benchFiltered
       .filter((p) => !selections.get(p.id) && !lastPlayed[p.id])
       .sort((a, b) => shortName(a).localeCompare(shortName(b)))
-    const assigned = filtered.filter((p) => !!selections.get(p.id))
+    const assigned = benchFiltered.filter((p) => !!selections.get(p.id))
     return [...unassignedPlayed, ...unassignedNeverPlayed, ...assigned]
-  }, [filtered, selections, lastPlayed])
+  }, [benchFiltered, selections, lastPlayed])
 
   function renderTile(player: Player, colContext: 'bench' | 'team1' | 'team2') {
     const assignment = selections.get(player.id) ?? null
@@ -235,7 +238,7 @@ export function ThreeColumnAssigner({
           placeholder="Search players…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 py-2.5 pl-4 pr-9 text-sm text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none"
+          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 py-2.5 pl-4 pr-9 text-base text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none touch-manipulation"
         />
         {search && (
           <button
@@ -276,8 +279,8 @@ export function ThreeColumnAssigner({
           )}
         </div>
 
-        {/* Bench — all players, assigned ones as ghosts at bottom */}
-        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 p-1">
+        {/* Bench — search-filtered players, assigned ones as ghosts at bottom */}
+        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 p-1 touch-pan-y">
           {benchPlayers.map((p) => renderTile(p, 'bench'))}
           {benchPlayers.length === 0 && (
             <div className="flex h-full items-center justify-center">
