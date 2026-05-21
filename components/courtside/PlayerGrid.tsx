@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { displayName } from '@/lib/stats'
 import type { Player, TeamSlot } from '@/lib/types'
 
 interface Props {
   players: Player[]
   selections: Map<string, TeamSlot>
+  lastPlayed: Record<string, string>
   onToggle: (playerId: string) => void
 }
 
@@ -20,8 +21,9 @@ const teamLabels: Record<TeamSlot, string> = {
   2: 'T2',
 }
 
-export function PlayerGrid({ players, selections, onToggle }: Props) {
+export function PlayerGrid({ players, selections, lastPlayed, onToggle }: Props) {
   const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
 
   // Compute once when player list changes: set of display names that are shared
   const sharedDisplayNames = useMemo(() => {
@@ -37,16 +39,33 @@ export function PlayerGrid({ players, selections, onToggle }: Props) {
     return shared
   }, [players])
 
+  // Three-tier sort (recomputes whenever selections change):
+  //   Tier 1a — unassigned, has play history → last_played desc
+  //   Tier 1b — unassigned, never played    → alphabetical
+  //   Tier 2  — assigned to either team     → bottom, reduced opacity
+  const sortedPlayers = useMemo(() => {
+    const unassignedPlayed = players
+      .filter((p) => !selections.get(p.id) && lastPlayed[p.id])
+      .sort((a, b) => lastPlayed[b.id].localeCompare(lastPlayed[a.id]))
+    const unassignedNeverPlayed = players
+      .filter((p) => !selections.get(p.id) && !lastPlayed[p.id])
+      .sort((a, b) => displayName(a).localeCompare(displayName(b)))
+    const assigned = players.filter((p) => !!selections.get(p.id))
+    return [...unassignedPlayed, ...unassignedNeverPlayed, ...assigned]
+  }, [players, selections, lastPlayed])
+
   const filtered = search.trim()
-    ? players.filter((p) =>
-        displayName(p).toLowerCase().includes(search.toLowerCase()) ||
-        p.name.toLowerCase().includes(search.toLowerCase()),
+    ? sortedPlayers.filter(
+        (p) =>
+          displayName(p).toLowerCase().includes(search.toLowerCase()) ||
+          p.name.toLowerCase().includes(search.toLowerCase()),
       )
-    : players
+    : sortedPlayers
 
   return (
     <div className="flex flex-col gap-3">
       <input
+        ref={searchRef}
         type="text"
         placeholder="Search players..."
         value={search}
@@ -57,17 +76,26 @@ export function PlayerGrid({ players, selections, onToggle }: Props) {
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {filtered.map((player) => {
           const team = selections.get(player.id) ?? null
+          const isAssigned = !!team
           const dn = displayName(player)
           const subtitle = sharedDisplayNames.has(dn) ? player.name : null
 
           const baseStyle =
             'flex min-h-[64px] flex-col items-center justify-center rounded-xl border-2 px-2 py-3 text-center text-sm font-semibold transition-all active:scale-95 cursor-pointer select-none'
-          const style = team
-            ? `${baseStyle} ${teamStyles[team]}`
-            : `${baseStyle} border-zinc-700 bg-zinc-800 text-zinc-200 hover:border-zinc-500`
+          const colorStyle = team
+            ? `${teamStyles[team]}`
+            : 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:border-zinc-500'
+          const opacityStyle = isAssigned ? 'opacity-50' : ''
 
           return (
-            <button key={player.id} className={style} onClick={() => onToggle(player.id)}>
+            <button
+              key={player.id}
+              className={`${baseStyle} ${colorStyle} ${opacityStyle}`}
+              onClick={() => {
+                onToggle(player.id)
+                searchRef.current?.select()
+              }}
+            >
               <span className="leading-tight">{dn}</span>
               {subtitle && (
                 <span className="mt-0.5 text-[10px] font-normal opacity-60 leading-tight">

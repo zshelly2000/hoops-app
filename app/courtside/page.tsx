@@ -8,7 +8,7 @@ import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
 import { Toast } from '@/components/shared/Toast'
 import type { Player, Session, TeamSlot } from '@/lib/types'
 
-// Sort: most recently played first (by last_played from stats), then alpha
+// Initial load sort: most recently played first, then alpha
 function sortPlayers(players: Player[], lastPlayed: Record<string, string>): Player[] {
   return [...players].sort((a, b) => {
     const la = lastPlayed[a.id]
@@ -20,7 +20,8 @@ function sortPlayers(players: Player[], lastPlayed: Record<string, string>): Pla
   })
 }
 
-type Toast = { message: string; type: 'success' | 'error'; key: number }
+type ToastState = { message: string; type: 'success' | 'error'; key: number }
+type KeepWinnersSheet = { winnerIds: string[]; gameNumber: number }
 
 export default function CourtsidePage() {
   const [players, setPlayers] = useState<Player[]>([])
@@ -33,8 +34,9 @@ export default function CourtsidePage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
-  const [toast, setToast] = useState<Toast | null>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
   const [startingSession, setStartingSession] = useState(false)
+  const [keepWinnersSheet, setKeepWinnersSheet] = useState<KeepWinnersSheet | null>(null)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
@@ -131,16 +133,21 @@ export default function CourtsidePage() {
     if (!session) return
     setSubmitting(true)
 
-    const team1Players = players
+    // Capture before reset
+    const team1PlayerIds = players
       .filter((p) => selections.get(p.id) === 1)
       .map((p) => p.id)
-    const team2Players = players
+    const team2PlayerIds = players
       .filter((p) => selections.get(p.id) === 2)
       .map((p) => p.id)
+    const t1Score = parseInt(team1Score)
+    const t2Score = parseInt(team2Score)
+    const isTie = t1Score === t2Score
+    const winnerIds = t1Score > t2Score ? team1PlayerIds : team2PlayerIds
 
     const newCount = gameCount + 1
 
-    // Optimistic update
+    // Optimistic reset — always clear the form immediately
     setGameCount(newCount)
     setSelections(new Map())
     setTeam1Score('')
@@ -152,10 +159,10 @@ export default function CourtsidePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: session.id,
-          team1_score: parseInt(team1Score),
-          team2_score: parseInt(team2Score),
-          team1_players: team1Players,
-          team2_players: team2Players,
+          team1_score: t1Score,
+          team2_score: t2Score,
+          team1_players: team1PlayerIds,
+          team2_players: team2PlayerIds,
         }),
       })
 
@@ -164,13 +171,34 @@ export default function CourtsidePage() {
         throw new Error(data.error)
       }
 
-      showToast(`Game ${newCount} saved!`)
+      if (isTie) {
+        showToast(`Game ${newCount} saved!`)
+      } else {
+        setKeepWinnersSheet({ winnerIds, gameNumber: newCount })
+      }
     } catch (err) {
       setGameCount(newCount - 1)
       showToast(err instanceof Error ? err.message : 'Failed to save game', 'error')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleKeepWinners() {
+    if (!keepWinnersSheet) return
+    const next = new Map<string, TeamSlot>()
+    for (const id of keepWinnersSheet.winnerIds) {
+      next.set(id, 1)
+    }
+    setSelections(next)
+    showToast(`Game ${keepWinnersSheet.gameNumber} saved! Winners on Team 1.`)
+    setKeepWinnersSheet(null)
+  }
+
+  function handleNewGame() {
+    if (!keepWinnersSheet) return
+    showToast(`Game ${keepWinnersSheet.gameNumber} saved!`)
+    setKeepWinnersSheet(null)
   }
 
   function handlePlayerAdded(player: Player) {
@@ -269,6 +297,7 @@ export default function CourtsidePage() {
               <PlayerGrid
                 players={players}
                 selections={selections}
+                lastPlayed={lastPlayed}
                 onToggle={handleToggle}
               />
             </div>
@@ -281,6 +310,34 @@ export default function CourtsidePage() {
           onClose={() => setShowAddPlayer(false)}
           onAdded={handlePlayerAdded}
         />
+      )}
+
+      {/* Keep Winners bottom sheet */}
+      {keepWinnersSheet && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+          <div className="w-full max-w-lg rounded-t-3xl bg-zinc-900 px-6 pb-12 pt-6 shadow-2xl">
+            <div className="mb-1 text-center text-2xl font-black text-white">
+              Game {keepWinnersSheet.gameNumber} saved! 🏆
+            </div>
+            <p className="mb-8 text-center text-sm text-zinc-500">
+              What happens next?
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={handleNewGame}
+                className="rounded-2xl border border-zinc-700 py-5 text-lg font-bold text-white transition-all hover:bg-zinc-800 active:scale-95"
+              >
+                New Game
+              </button>
+              <button
+                onClick={handleKeepWinners}
+                className="rounded-2xl bg-orange-500 py-5 text-lg font-bold text-white transition-all hover:bg-orange-400 active:scale-95"
+              >
+                Keep Winners
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
