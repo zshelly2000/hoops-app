@@ -12,7 +12,7 @@ export default function SessionsPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch('/api/sessions')
+        const res = await fetch('/api/sessions', { cache: 'no-store' })
         if (!res.ok) throw new Error('Failed to load')
         const data = await res.json() as Session[]
         setSessions(data)
@@ -47,7 +47,6 @@ export default function SessionsPage() {
                         weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
                       })}
                     </p>
-                    <p className="text-sm text-zinc-500">{session.location}</p>
                   </div>
                   <span className="text-zinc-600">→</span>
                 </Link>

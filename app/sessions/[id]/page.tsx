@@ -106,7 +106,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
             })}
           </h1>
           <p className="text-sm text-zinc-500">
-            {session.location} · {games.length} games · {uniquePlayers} players
+            {games.length} games · {uniquePlayers} players
           </p>
         </div>
 

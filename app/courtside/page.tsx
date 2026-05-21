@@ -47,8 +47,8 @@ export default function CourtsidePage() {
       setLoading(true)
       try {
         const [playersRes, statsRes] = await Promise.all([
-          fetch('/api/players'),
-          fetch('/api/stats'),
+          fetch('/api/players', { cache: 'no-store' }),
+          fetch('/api/stats', { cache: 'no-store' }),
         ])
 
         const playersData = await playersRes.json() as Player[]
@@ -63,15 +63,15 @@ export default function CourtsidePage() {
         setLastPlayed(lp)
         setPlayers(sortPlayers(active, lp))
 
-        // Check for today's session
-        const today = new Date().toISOString().split('T')[0]
-        const sessRes = await fetch(`/api/sessions?date=${today}`)
+        // Use local date (en-CA gives YYYY-MM-DD) to avoid UTC day boundary mismatch
+        const today = new Date().toLocaleDateString('en-CA')
+        const sessRes = await fetch(`/api/sessions?date=${today}`, { cache: 'no-store' })
         if (sessRes.ok) {
           const sessions = await sessRes.json() as Session[]
           const todaySession = sessions.find((s) => s.session_date === today)
           if (todaySession) {
             setSession(todaySession)
-            const gamesRes = await fetch(`/api/sessions/${todaySession.id}/games`)
+            const gamesRes = await fetch(`/api/sessions/${todaySession.id}/games`, { cache: 'no-store' })
             if (gamesRes.ok) {
               const games = await gamesRes.json() as { length: number }
               setGameCount(games.length)
@@ -100,7 +100,8 @@ export default function CourtsidePage() {
   async function startSession() {
     setStartingSession(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
+      // Use local date (en-CA gives YYYY-MM-DD) to avoid UTC day boundary mismatch
+      const today = new Date().toLocaleDateString('en-CA')
       const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
