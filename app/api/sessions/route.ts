@@ -11,10 +11,30 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
 
-  let query = supabase.from('sessions').select('*').order('session_date', { ascending: false })
-  if (date) query = query.eq('session_date', date)
+  if (date) {
+    // Courtside uses ?date= to look up the active session for a specific day.
+    // A session that was just started (0 games) must still be returned so the
+    // courtside screen can continue logging into it — no !inner filter here.
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('session_date', date)
 
-  const { data, error } = await query
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
+    }
+
+    return NextResponse.json(data as unknown as Session[], { headers: NO_CACHE })
+  }
+
+  // Sessions list (no date filter): only return sessions that have at least one
+  // game. games!inner uses an INNER JOIN on the games table, which excludes any
+  // sessions row with no matching games rows.  The extra `games` field in the
+  // response JSON is ignored by the client.
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('*, games!inner(id)')
+    .order('session_date', { ascending: false })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })

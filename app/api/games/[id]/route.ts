@@ -25,15 +25,20 @@ export async function DELETE(
     return NextResponse.json({ error: 'Game not found' }, { status: 404, headers: NO_CACHE })
   }
 
-  // Auto-delete the session if it now has no remaining games
+  // Auto-delete the session if it now has no remaining games.
+  // Flow: game deleted → check remaining count → delete session if zero.
+  // The game_players rows are cascade-deleted by the DB (ON DELETE CASCADE on game_id).
   const sessionId = rows[0].session_id
-  const { data: remaining } = await supabase
+  const { data: remaining, error: remainErr } = await supabase
     .from('games')
     .select('id')
     .eq('session_id', sessionId)
     .limit(1)
 
-  if (remaining && (remaining as { id: string }[]).length === 0) {
+  // Only delete the session when the check query succeeded AND confirmed zero games remain.
+  // If the check errors (remainErr != null), leave the session — the sessions list query
+  // uses games!inner which already filters empty sessions out of the display.
+  if (!remainErr && remaining !== null && (remaining as { id: string }[]).length === 0) {
     // Best-effort — if this fails the game is still deleted; don't surface the error
     await supabase.from('sessions').delete().eq('id', sessionId)
   }
