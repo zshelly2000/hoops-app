@@ -112,14 +112,6 @@ type EnrichedCandidate = NarrativeCandidate & {
 // ---------------------------------------------------------------------------
 
 const TONES = ['analytical', 'dramatic', 'understated', 'conversational'] as const
-type Tone = (typeof TONES)[number]
-
-function nextTone(lastTone: string | null): Tone {
-  if (!lastTone) return 'analytical'
-  const idx = TONES.indexOf(lastTone as Tone)
-  if (idx === -1) return 'analytical'
-  return TONES[(idx + 1) % TONES.length]
-}
 
 function nextAngle(angleOptions: string[], lastAngle: string | null): string {
   if (!lastAngle || angleOptions.length === 0) return angleOptions[0] ?? 'general'
@@ -964,7 +956,7 @@ export async function POST(request: Request) {
         ...candidate,
         previous_text: prev?.body,
         angle_used: nextAngle(candidate.angle_options, angleRow?.last_angle ?? null),
-        tone_used: nextTone(angleRow?.last_tone ?? null),
+        tone_used: TONES[Math.floor(Math.random() * TONES.length)],
       }
     })
 
