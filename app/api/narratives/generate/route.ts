@@ -710,6 +710,40 @@ function detectReturner(
 }
 
 // ---------------------------------------------------------------------------
+// Per-type angle instruction
+// ---------------------------------------------------------------------------
+
+function getAngleInstruction(narrative_type: string): string {
+  const instructions: Record<string, string> = {
+    individual_streak:
+      "Don't just report the streak — ask what it reveals about this player right now.",
+    cold_streak:
+      'Focus on what needs to change, not just that they\'re losing. Find the pattern in the losses.',
+    hot_duo:
+      "Don't just cite the record — explain why this pairing works. What do they give each other?",
+    rivalry:
+      "This isn't just a record — it's a relationship. What does the history between these two mean?",
+    upset:
+      'The math said one thing, the scoreboard said another. Make the reader feel the gap.',
+    climber:
+      'Rank changes are just math — find the human story in the climb.',
+    veteran_milestone:
+      "This isn't about the number — it's about what this person represents to the group.",
+    session_recap:
+      'Give the session an identity. Every run has a defining characteristic — find it.',
+    defensive_battle:
+      "Low scores aren't boring — they're a war. Make the reader feel the grind.",
+    shootout:
+      'Pure offense is chaos and joy. Let the energy of the scoring show in the writing.',
+    perfect_session:
+      "Going undefeated isn't luck at this level. What made them untouchable today?",
+    returner:
+      'Thirty days away is an eternity in pickup basketball. What did they come back to? What did they miss?',
+  }
+  return instructions[narrative_type] ?? ''
+}
+
+// ---------------------------------------------------------------------------
 // Claude API call
 // ---------------------------------------------------------------------------
 
@@ -736,19 +770,21 @@ async function generateNarrative(
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 200,
-        system: `You write narrative sports copy for a pickup basketball group
-that plays at ${session.location}. Your voice is confident, specific,
-and slightly dramatic — like a great ESPN blurb or The Athletic lede.
-Rules:
-- Use first names only (never full names)
-- Always reference specific numbers from the data
-- Never use generic phrases like "has been playing well" or
-  "is having a great season" or "continues to impress"
-- Maximum 2 sentences for body copy
-- Headline is maximum 8 words, no punctuation at the end
-- Tone for this story: ${candidate.tone_used}
-- Angle for this story: ${candidate.angle_used}
-- Return ONLY valid JSON, no markdown, no backticks:
+        system: `You are a sports columnist in the tradition of Zach Lowe and Wright Thompson — you find the human story inside the numbers. Your writing has three qualities:
+
+1. SPECIFICITY: Every sentence contains a concrete detail. Never write "playing well" — write "won 6 of his last 7 and the one loss wasn't close."
+
+2. THE UNEXPECTED ANGLE: Don't state the obvious. If someone is on a streak, ask what it reveals about them. If two players dominate together, ask why the chemistry works.
+
+3. PRESENT TENSE URGENCY: Write like it matters right now. Use "has become," "is turning into," "cannot be stopped" — not "had a good session."
+
+Rules: use first names only, always reference specific numbers, two sentences maximum for body copy, headline maximum 8 words, no exclamation points, no clichés.
+
+Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show."
+
+Tone for this story: ${candidate.tone_used}
+Angle for this story: ${candidate.angle_used}
+Return ONLY valid JSON, no markdown, no backticks:
   {"headline": "...", "body": "..."}`,
         messages: [
           {
@@ -758,7 +794,8 @@ ${candidate.previous_text ? `Previous version (do not repeat phrases or structur
 Key facts: ${candidate.headline_hint}
 Stats: ${JSON.stringify(candidate.body_data)}
 Players: ${playerNames.join(', ')}
-Session: ${session.session_date} at ${session.location}`,
+Session: ${session.session_date} at ${session.location}
+${getAngleInstruction(candidate.narrative_type)}`,
           },
         ],
       }),
@@ -914,7 +951,9 @@ export async function POST(request: Request) {
     // -----------------------------------------------------------------------
     // Sort by priority, deduplicate per player, select up to 8
     // -----------------------------------------------------------------------
-    candidates.sort((a, b) => b.priority - a.priority)
+    candidates.sort(
+      (a, b) => b.priority - a.priority || a.narrative_type.localeCompare(b.narrative_type),
+    )
 
     // Keep only the highest-priority candidate for each player. Candidates
     // with no player_ids (session_recap, upset, defensive_battle, shootout)
