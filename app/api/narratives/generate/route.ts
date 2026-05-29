@@ -4,6 +4,7 @@ export const maxDuration = 60
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { NarrativeCandidate } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
@@ -1047,15 +1048,15 @@ export async function POST(request: Request) {
     // -----------------------------------------------------------------------
     // Write to Supabase
     // -----------------------------------------------------------------------
-    await supabase.from('narratives').delete().eq('session_id', session_id)
+    await supabaseAdmin.from('narratives').delete().eq('session_id', session_id)
 
     if (narrativesToInsert.length > 0) {
-      await supabase.from('narratives').insert(narrativesToInsert)
+      await supabaseAdmin.from('narratives').insert(narrativesToInsert)
     }
 
     // Update angle rotation tracking
     for (const narrative of enriched) {
-      await supabase
+      await supabaseAdmin
         .from('narrative_angles')
         .update({
           last_angle: narrative.angle_used,

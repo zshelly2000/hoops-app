@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
@@ -10,7 +10,7 @@ export async function PATCH(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('sessions')
     .update({ is_complete: true, completed_at: new Date().toISOString() })
     .eq('id', params.id)

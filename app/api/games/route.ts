@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Game } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
   const game_number = rows && rows.length > 0 ? rows[0].game_number + 1 : 1
 
   // Insert game
-  const { data: gameData, error: gameError } = await supabase
+  const { data: gameData, error: gameError } = await supabaseAdmin
     .from('games')
     .insert({ session_id, game_number, team1_score, team2_score })
     .select()
@@ -57,12 +58,12 @@ export async function POST(request: Request) {
     ...team2_players.map((player_id) => ({ game_id: game.id, player_id, team: 2 })),
   ]
 
-  const { error: playersError } = await supabase
+  const { error: playersError } = await supabaseAdmin
     .from('game_players')
     .insert(gamePlayers)
 
   if (playersError) {
-    await supabase.from('games').delete().eq('id', game.id)
+    await supabaseAdmin.from('games').delete().eq('id', game.id)
     return NextResponse.json({ error: playersError.message }, { status: 500, headers: NO_CACHE })
   }
 

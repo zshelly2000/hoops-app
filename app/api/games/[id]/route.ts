@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
@@ -10,7 +11,7 @@ export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('games')
     .delete()
     .eq('id', params.id)
@@ -47,7 +48,7 @@ export async function DELETE(
       .single()
 
     // Best-effort — if this fails the game is still deleted; don't surface the error
-    await supabase.from('sessions').delete().eq('id', sessionId)
+    await supabaseAdmin.from('sessions').delete().eq('id', sessionId)
 
     // If the deleted session was complete, find the previous complete session so the
     // client can trigger narrative regeneration directly from the browser.

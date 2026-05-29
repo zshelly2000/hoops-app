@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Player } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Name is required' }, { status: 400, headers: NO_CACHE })
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('players')
     .insert({
       name: body.name.trim(),

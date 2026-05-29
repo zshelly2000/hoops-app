@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Session } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -46,7 +47,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = await request.json() as { session_date: string; location?: string; notes?: string }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sessions')
     .insert({
       session_date: body.session_date,

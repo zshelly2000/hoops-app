@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { supabaseAdmin } from '@/lib/supabase-admin'
 import type { Session } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -30,7 +31,7 @@ export async function PATCH(
 ) {
   const body = await request.json() as Record<string, unknown>
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('sessions')
     .update(body)
     .eq('id', params.id)
