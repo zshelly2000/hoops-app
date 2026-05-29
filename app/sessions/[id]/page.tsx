@@ -35,6 +35,8 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   const [confirmDelete, setConfirmDelete] = useState<GameRow | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
+  const [reopening, setReopening] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
@@ -67,6 +69,41 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   }, [load])
 
   const { isRefreshing } = usePullToRefresh(load)
+
+  async function handleReopen() {
+    if (!session) return
+    setReopening(true)
+    try {
+      const res = await fetch(`/api/sessions/${session.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_complete: false, completed_at: null }),
+      })
+      if (!res.ok) throw new Error('Failed to reopen session')
+      router.push('/courtside')
+    } catch {
+      showToast('Failed to reopen session', 'error')
+    } finally {
+      setReopening(false)
+    }
+  }
+
+  async function handleRegenerateRundown() {
+    if (!session) return
+    setRegenerating(true)
+    showToast('Regenerating…')
+    try {
+      await fetch('/api/narratives/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: session.id }),
+      })
+    } catch {
+      // Non-blocking
+    } finally {
+      setRegenerating(false)
+    }
+  }
 
   async function handleDelete() {
     if (!confirmDelete) return
@@ -119,7 +156,30 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           </h1>
           <p className="text-sm text-zinc-500">
             {games.length} games · {uniquePlayers} players
+            {session.is_complete && (
+              <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                Complete
+              </span>
+            )}
           </p>
+          {session.is_complete && (
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={handleReopen}
+                disabled={reopening}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+              >
+                {reopening ? 'Reopening…' : 'Add More Games'}
+              </button>
+              <button
+                onClick={handleRegenerateRundown}
+                disabled={regenerating}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+              >
+                {regenerating ? 'Regenerating…' : 'Regenerate Rundown 🔄'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">

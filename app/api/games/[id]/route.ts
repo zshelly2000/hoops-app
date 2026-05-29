@@ -39,8 +39,35 @@ export async function DELETE(
   // If the check errors (remainErr != null), leave the session — the sessions list query
   // uses games!inner which already filters empty sessions out of the display.
   if (!remainErr && remaining !== null && (remaining as { id: string }[]).length === 0) {
+    // Check if the session was complete before deleting it
+    const { data: sess } = await supabase
+      .from('sessions')
+      .select('id, is_complete')
+      .eq('id', sessionId)
+      .single()
+
     // Best-effort — if this fails the game is still deleted; don't surface the error
     await supabase.from('sessions').delete().eq('id', sessionId)
+
+    // If we deleted a complete session, regenerate narratives for the previous complete session
+    if ((sess as unknown as { is_complete: boolean } | null)?.is_complete) {
+      const { data: prevSession } = await supabase
+        .from('sessions')
+        .select('id')
+        .eq('is_complete', true)
+        .neq('id', sessionId)
+        .order('session_date', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (prevSession) {
+        fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/narratives/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: (prevSession as unknown as { id: string }).id }),
+        }).catch(() => {})
+      }
+    }
   }
 
   return new NextResponse(null, { status: 204, headers: NO_CACHE })

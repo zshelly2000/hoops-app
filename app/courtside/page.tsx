@@ -38,6 +38,8 @@ export default function CourtsidePage() {
   const [toast, setToast] = useState<ToastState | null>(null)
   const [startingSession, setStartingSession] = useState(false)
   const [keepWinnersSheet, setKeepWinnersSheet] = useState<KeepWinnersSheet | null>(null)
+  const [showEndSession, setShowEndSession] = useState(false)
+  const [endingSession, setEndingSession] = useState(false)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
@@ -70,7 +72,8 @@ export default function CourtsidePage() {
         const sessRes = await fetch(`/api/sessions?date=${today}`, { cache: 'no-store' })
         if (sessRes.ok) {
           const sessions = await sessRes.json() as Session[]
-          const todaySession = sessions.find((s) => s.session_date === today)
+          // Only resume sessions that haven't been ended yet
+          const todaySession = sessions.find((s) => s.session_date === today && !s.is_complete)
           if (todaySession) {
             setSession(todaySession)
             const gamesRes = await fetch(`/api/sessions/${todaySession.id}/games`, { cache: 'no-store' })
@@ -196,6 +199,27 @@ export default function CourtsidePage() {
     setKeepWinnersSheet(null)
   }
 
+  async function handleEndSession() {
+    if (!session) return
+    setEndingSession(true)
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/complete`, { method: 'PATCH' })
+      if (!res.ok) throw new Error('Failed to end session')
+      setShowEndSession(false)
+      showToast('Rundown generating... 📰')
+      // Reset courtside state — back to "No run today"
+      setSession(null)
+      setGameCount(0)
+      setSelections(new Map())
+      setTeam1Score('')
+      setTeam2Score('')
+    } catch {
+      showToast('Failed to end session', 'error')
+    } finally {
+      setEndingSession(false)
+    }
+  }
+
   function handlePlayerAdded(player: Player) {
     setShowAddPlayer(false)
     setPlayers((prev) => sortPlayers([...prev, player], lastPlayed))
@@ -284,6 +308,18 @@ export default function CourtsidePage() {
             >
               {submitting ? 'Saving…' : 'Submit Game'}
             </button>
+
+            {/* End Session — only shown once at least one game has been logged */}
+            {gameCount > 0 && (
+              <div className="mt-2 flex justify-center">
+                <button
+                  onClick={() => setShowEndSession(true)}
+                  className="rounded-xl border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-400 transition-all hover:border-zinc-500 hover:text-zinc-200"
+                >
+                  End Session 📰
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -317,6 +353,36 @@ export default function CourtsidePage() {
                 className="rounded-2xl bg-orange-500 py-5 text-lg font-bold text-white transition-all hover:bg-orange-400 active:scale-95"
               >
                 Keep Winners
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* End Session confirmation bottom sheet */}
+      {showEndSession && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+          <div className="w-full max-w-lg rounded-t-3xl bg-zinc-900 px-6 pb-12 pt-6 shadow-2xl">
+            <div className="mb-1 text-center text-xl font-black text-white">
+              End today&apos;s run?
+            </div>
+            <p className="mb-8 text-center text-sm text-zinc-500">
+              This will generate your Rundown story.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => setShowEndSession(false)}
+                disabled={endingSession}
+                className="rounded-2xl border border-zinc-700 py-4 text-base font-bold text-white transition-all hover:bg-zinc-800 active:scale-95 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEndSession}
+                disabled={endingSession}
+                className="rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-200 transition-all hover:bg-zinc-800 active:scale-95 disabled:opacity-50"
+              >
+                {endingSession ? 'Ending…' : 'End Session'}
               </button>
             </div>
           </div>

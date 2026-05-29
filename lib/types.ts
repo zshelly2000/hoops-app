@@ -18,7 +18,43 @@ export interface Session {
   session_date: string
   location: string
   notes: string | null
+  is_complete: boolean
+  completed_at: string | null
   created_at: string
+}
+
+export interface Narrative {
+  id: string
+  session_id: string
+  narrative_type: string
+  angle_used: string
+  tone_used: string
+  headline: string
+  body: string
+  is_lead: boolean
+  priority: number
+  player_ids: string[]
+  raw_data: Record<string, unknown>
+  created_at: string
+}
+
+export interface NarrativeAngle {
+  id: string
+  narrative_type: string
+  last_angle: string | null
+  last_tone: string | null
+  last_used_at: string | null
+}
+
+// Internal type for generation engine
+export interface NarrativeCandidate {
+  narrative_type: string
+  headline_hint: string
+  body_data: Record<string, unknown>
+  player_ids: string[]
+  priority: number
+  angle_options: string[]
+  previous_text?: string
 }
 
 export interface Game {

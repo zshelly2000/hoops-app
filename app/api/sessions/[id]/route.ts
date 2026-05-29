@@ -23,3 +23,23 @@ export async function GET(
 
   return NextResponse.json(data as unknown as Session, { headers: NO_CACHE })
 }
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: { id: string } },
+) {
+  const body = await request.json() as Record<string, unknown>
+
+  const { data, error } = await supabase
+    .from('sessions')
+    .update(body)
+    .eq('id', params.id)
+    .select()
+    .single()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
+  }
+
+  return NextResponse.json(data as unknown as Session, { headers: NO_CACHE })
+}
