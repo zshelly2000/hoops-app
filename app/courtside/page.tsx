@@ -39,7 +39,6 @@ export default function CourtsidePage() {
   const [startingSession, setStartingSession] = useState(false)
   const [keepWinnersSheet, setKeepWinnersSheet] = useState<KeepWinnersSheet | null>(null)
   const [showEndSession, setShowEndSession] = useState(false)
-  const [endingSession, setEndingSession] = useState(false)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
@@ -199,25 +198,23 @@ export default function CourtsidePage() {
     setKeepWinnersSheet(null)
   }
 
-  async function handleEndSession() {
+  function handleEndSession() {
     if (!session) return
-    setEndingSession(true)
-    try {
-      const res = await fetch(`/api/sessions/${session.id}/complete`, { method: 'PATCH' })
-      if (!res.ok) throw new Error('Failed to end session')
-      setShowEndSession(false)
-      showToast('Rundown generating... 📰')
-      // Reset courtside state — back to "No run today"
-      setSession(null)
-      setGameCount(0)
-      setSelections(new Map())
-      setTeam1Score('')
-      setTeam2Score('')
-    } catch {
-      showToast('Failed to end session', 'error')
-    } finally {
-      setEndingSession(false)
-    }
+    const sessionId = session.id
+
+    // Optimistic: reset state and show toast immediately — don't wait for the
+    // server response. The /complete route awaits generation internally, so it
+    // takes 15-25 s; the user should never feel that delay.
+    setShowEndSession(false)
+    showToast('Rundown generating... 📰')
+    setSession(null)
+    setGameCount(0)
+    setSelections(new Map())
+    setTeam1Score('')
+    setTeam2Score('')
+
+    // Fire to server in background — server marks complete and awaits generation
+    fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' }).catch(() => {})
   }
 
   function handlePlayerAdded(player: Player) {
@@ -372,17 +369,15 @@ export default function CourtsidePage() {
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => setShowEndSession(false)}
-                disabled={endingSession}
-                className="rounded-2xl border border-zinc-700 py-4 text-base font-bold text-white transition-all hover:bg-zinc-800 active:scale-95 disabled:opacity-50"
+                className="rounded-2xl border border-zinc-700 py-4 text-base font-bold text-white transition-all hover:bg-zinc-800 active:scale-95"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEndSession}
-                disabled={endingSession}
-                className="rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-200 transition-all hover:bg-zinc-800 active:scale-95 disabled:opacity-50"
+                className="rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-200 transition-all hover:bg-zinc-800 active:scale-95"
               >
-                {endingSession ? 'Ending…' : 'End Session'}
+                End Session
               </button>
             </div>
           </div>

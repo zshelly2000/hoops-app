@@ -920,14 +920,31 @@ export async function POST(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Sort by priority, select up to 8, force session_recap if missing
+    // Sort by priority, deduplicate per player, select up to 8
     // -----------------------------------------------------------------------
     candidates.sort((a, b) => b.priority - a.priority)
 
-    const selected = candidates.slice(0, 8)
+    // Keep only the highest-priority candidate for each player. Candidates
+    // with no player_ids (session_recap, upset, defensive_battle, shootout)
+    // are never blocked and never contribute to the seen set.
+    const seenPlayerIds = new Set<string>()
+    const deduplicated: NarrativeCandidate[] = []
+    for (const candidate of candidates) {
+      if (candidate.player_ids.length === 0) {
+        deduplicated.push(candidate)
+        continue
+      }
+      const hasOverlap = candidate.player_ids.some((id) => seenPlayerIds.has(id))
+      if (!hasOverlap) {
+        deduplicated.push(candidate)
+        candidate.player_ids.forEach((id) => seenPlayerIds.add(id))
+      }
+    }
+
+    const selected = deduplicated.slice(0, 8)
     const hasRecap = selected.some((c) => c.narrative_type === 'session_recap')
     if (!hasRecap) {
-      const recap = candidates.find((c) => c.narrative_type === 'session_recap')
+      const recap = deduplicated.find((c) => c.narrative_type === 'session_recap')
       if (recap) {
         if (selected.length >= 8) {
           selected[7] = recap
