@@ -24,7 +24,7 @@ export async function PATCH(
   // is sent, so the generate request is guaranteed to be dispatched even on
   // Vercel where fire-and-forget fetch calls are killed when the response flushes.
   waitUntil(
-    fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/narratives/generate`, {
+    fetch(`/api/narratives/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: params.id }),
