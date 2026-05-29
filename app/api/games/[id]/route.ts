@@ -49,7 +49,10 @@ export async function DELETE(
     // Best-effort — if this fails the game is still deleted; don't surface the error
     await supabase.from('sessions').delete().eq('id', sessionId)
 
-    // If we deleted a complete session, regenerate narratives for the previous complete session
+    // If the deleted session was complete, find the previous complete session so the
+    // client can trigger narrative regeneration directly from the browser.
+    // We return its ID in the response rather than firing a server-side fetch —
+    // server-side fire-and-forget is killed when the response is sent on Vercel.
     if ((sess as unknown as { is_complete: boolean } | null)?.is_complete) {
       const { data: prevSession } = await supabase
         .from('sessions')
@@ -61,14 +64,13 @@ export async function DELETE(
         .single()
 
       if (prevSession) {
-        fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/narratives/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: (prevSession as unknown as { id: string }).id }),
-        }).catch(() => {})
+        return NextResponse.json(
+          { prev_session_id: (prevSession as unknown as { id: string }).id },
+          { status: 200, headers: NO_CACHE },
+        )
       }
     }
   }
 
-  return new NextResponse(null, { status: 204, headers: NO_CACHE })
+  return NextResponse.json({}, { status: 200, headers: NO_CACHE })
 }

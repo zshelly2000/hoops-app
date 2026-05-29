@@ -114,11 +114,26 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
         const data = await res.json() as { error: string }
         throw new Error(data.error)
       }
+
+      const data = await res.json() as { prev_session_id?: string }
+
       // Remove deleted game from local state immediately (confirmed 2xx)
       setGames((prev) => prev.filter((g) => g.id !== confirmDelete.id))
       showToast(`Game ${confirmDelete.game_number} deleted`)
       // Bust router cache so sessions list reflects the auto-deleted session if applicable
       router.refresh()
+
+      // If the server found a previous complete session that needs regeneration,
+      // call generate directly from the browser — same reliable pattern as the
+      // Regenerate button. Server-side fire-and-forget is killed on Vercel the
+      // moment the response is sent, so the browser must own this call.
+      if (data.prev_session_id) {
+        fetch('/api/narratives/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: data.prev_session_id }),
+        }).catch(() => {})
+      }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to delete game', 'error')
     } finally {
