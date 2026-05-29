@@ -14,7 +14,6 @@ import type { NarrativeCandidate } from '@/lib/types'
 interface RawSession {
   id: string
   session_date: string
-  location: string
   is_complete: boolean
   completed_at: string | null
 }
@@ -783,6 +782,8 @@ Rules: use first names only, always reference specific numbers, two sentences ma
 
 Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show."
 
+When referencing the session, use the day and date — "Wednesday's run," "last Thursday," "on May 29th" — never a venue name.
+
 Tone for this story: ${candidate.tone_used}
 Angle for this story: ${candidate.angle_used}
 Return ONLY valid JSON, no markdown, no backticks:
@@ -795,7 +796,7 @@ ${candidate.previous_text ? `Previous version (do not repeat phrases or structur
 Key facts: ${candidate.headline_hint}
 Stats: ${JSON.stringify(candidate.body_data)}
 Players: ${playerNames.join(', ')}
-Session: ${session.session_date} at ${session.location}
+Run: ${new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
 ${getAngleInstruction(candidate.narrative_type)}`,
           },
         ],

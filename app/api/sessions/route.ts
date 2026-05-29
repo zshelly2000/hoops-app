@@ -45,26 +45,24 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json() as { session_date: string; location?: string; notes?: string }
+  const body = await request.json() as { session_date: string; notes?: string }
 
   const { data, error } = await supabaseAdmin
     .from('sessions')
     .insert({
       session_date: body.session_date,
-      location: body.location ?? 'McKinley Park',
       notes: body.notes ?? null,
     })
     .select()
     .single()
 
   if (error) {
-    // Handle unique constraint: session already exists for date+location
+    // Handle unique constraint: session already exists for this date
     if (error.code === '23505') {
       const { data: existing } = await supabase
         .from('sessions')
         .select('*')
         .eq('session_date', body.session_date)
-        .eq('location', body.location ?? 'McKinley Park')
         .single()
       return NextResponse.json(existing as unknown as Session, { headers: NO_CACHE })
     }
