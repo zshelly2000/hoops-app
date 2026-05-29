@@ -198,13 +198,21 @@ export default function CourtsidePage() {
     setKeepWinnersSheet(null)
   }
 
-  function handleEndSession() {
+  async function handleEndSession() {
     if (!session) return
     const sessionId = session.id
 
-    // Optimistic: reset state and show toast immediately — don't wait for the
-    // server response. The /complete route awaits generation internally, so it
-    // takes 15-25 s; the user should never feel that delay.
+    // Step 1: confirm the session is marked complete before doing anything else.
+    // /complete is fast (single Supabase update) so the user waits < 1 s.
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' })
+      if (!res.ok) throw new Error('Failed to end session')
+    } catch {
+      showToast('Failed to end session', 'error')
+      return
+    }
+
+    // Step 2: reset UI state and show toast immediately.
     setShowEndSession(false)
     showToast('Rundown generating... 📰')
     setSession(null)
@@ -213,8 +221,15 @@ export default function CourtsidePage() {
     setTeam1Score('')
     setTeam2Score('')
 
-    // Fire to server in background — server marks complete and awaits generation
-    fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' }).catch(() => {})
+    // Step 3: call generate directly from the browser — the same approach the
+    // Regenerate button uses. The browser owns the connection and keeps it alive
+    // for the full duration; no server-to-server hop, no GC risk. We don't
+    // await it because the user has already seen the confirmation toast.
+    fetch('/api/narratives/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {})
   }
 
   function handlePlayerAdded(player: Player) {
