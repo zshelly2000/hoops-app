@@ -514,7 +514,9 @@ function detectClimber(
     const preRank = preRankMap.get(playerId)
     if (!currentRank || !preRank) continue
     const gained = preRank - currentRank
-    if (gained >= 3 && (!best || gained > best.gained)) {
+    // Must have a positive avg +/- — a climber from -4 to -2 is not a compelling story
+    const psCheck = playerStats.find((ps) => ps.player_id === playerId)
+    if (gained >= 3 && (psCheck?.avg_plus_minus ?? 0) > 0 && (!best || gained > best.gained)) {
       best = { playerId, gained }
     }
   }
@@ -535,6 +537,18 @@ function detectClimber(
       return pName ? displayName(pName) : ps.player_id
     })
 
+  // Session-specific performance: what they did today to earn this story
+  const todayEntry = todayByPlayer.get(best.playerId)
+  const sessionGames = todayEntry?.game_count ?? 0
+  const sessionTotalPM = todayEntry?.total_pm ?? 0
+  const sessionWins = todayLog.filter(
+    (row) => row.player_id === best!.playerId && row.is_win,
+  ).length
+  const sessionLosses = sessionGames - sessionWins
+  const sessionAvgPM = sessionGames > 0
+    ? Math.round((sessionTotalPM / sessionGames) * 10) / 10
+    : null
+
   return {
     narrative_type: 'climber',
     headline_hint: `${displayName(p)} is ranked #${bestCurrentRank} among players with 5+ games`,
@@ -546,6 +560,9 @@ function detectClimber(
         ? Math.round((psEntry.wins / psEntry.games_played) * 100) / 100
         : null,
       games_played: psEntry?.games_played ?? null,
+      session_wins: sessionWins,
+      session_losses: sessionLosses,
+      session_avg_plus_minus: sessionAvgPM,
       players_near_rank: playersNearRank,
       rank_definition: 'Ranked among players with 5 or more games played, by avg plus-minus.',
     },
