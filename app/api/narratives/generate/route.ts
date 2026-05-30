@@ -466,9 +466,9 @@ function detectClimber(
   sessionGameIds: Set<string>,
   playerMap: Map<string, PlayerName>,
 ): NarrativeCandidate | null {
-  // Current rankings
+  // Current rankings — 5+ games filter matches the leaderboard default
   const withStats = playerStats.filter(
-    (ps) => ps.games_played > 0 && ps.avg_plus_minus !== null,
+    (ps) => ps.games_played >= 5 && ps.avg_plus_minus !== null,
   )
   const currentSorted = [...withStats].sort(
     (a, b) => (b.avg_plus_minus ?? 0) - (a.avg_plus_minus ?? 0),
@@ -476,7 +476,7 @@ function detectClimber(
   const currentRankMap = new Map<string, number>()
   currentSorted.forEach((ps, idx) => currentRankMap.set(ps.player_id, idx + 1))
 
-  // Today's games contribution per player
+  // Today's games contribution per player (used only for detection)
   const todayLog = gameLog.filter((row) => sessionGameIds.has(row.game_id))
   const todayByPlayer = new Map<string, { total_pm: number; game_count: number }>()
   for (const row of todayLog) {
@@ -487,7 +487,7 @@ function detectClimber(
     })
   }
 
-  // Pre-session averages
+  // Pre-session averages — used only to detect who improved significantly today
   const preStats = playerStats
     .map((ps) => {
       const today = todayByPlayer.get(ps.player_id)
@@ -525,16 +525,11 @@ function detectClimber(
   if (!p) return null
 
   const bestCurrentRank = currentRankMap.get(best.playerId) ?? 0
-  const bestPreRank = preRankMap.get(best.playerId) ?? 0
   const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
 
-  // Players they leapfrogged: preRank between new and old position
-  const playersPassedNames = preStats
-    .filter((ps) => {
-      const pr = preRankMap.get(ps.player_id) ?? Infinity
-      return pr > bestCurrentRank && pr < bestPreRank && ps.player_id !== best!.playerId
-    })
-    .slice(0, 3)
+  // 3 players ranked immediately below in the 5+ games leaderboard
+  const playersNearRank = currentSorted
+    .slice(bestCurrentRank, bestCurrentRank + 3)
     .map((ps) => {
       const pName = playerMap.get(ps.player_id)
       return pName ? displayName(pName) : ps.player_id
@@ -542,18 +537,17 @@ function detectClimber(
 
   return {
     narrative_type: 'climber',
-    headline_hint: `${displayName(p)} climbed ${best.gained} spots in the rankings today`,
+    headline_hint: `${displayName(p)} is ranked #${bestCurrentRank} among players with 5+ games`,
     body_data: {
       player_id: best.playerId,
-      spots_gained: best.gained,
       current_rank: bestCurrentRank,
-      prev_rank: bestPreRank,
       avg_plus_minus: psEntry?.avg_plus_minus ?? null,
       win_pct: psEntry && psEntry.games_played > 0
         ? Math.round((psEntry.wins / psEntry.games_played) * 100) / 100
         : null,
       games_played: psEntry?.games_played ?? null,
-      players_passed: playersPassedNames,
+      players_near_rank: playersNearRank,
+      rank_definition: 'Ranked among players with 5 or more games played, by avg plus-minus.',
     },
     player_ids: [best.playerId],
     priority: 50,
@@ -999,7 +993,7 @@ function getAngleInstruction(narrative_type: string): string {
     upset:
       'The math said one thing, the scoreboard said another. Make the reader feel the gap.',
     climber:
-      'Rank changes are just math — find the human story in the climb.',
+      "State the player's current rank clearly and explain it is among players with 5+ games. Name the players ranked just below them. Focus on current stats and trajectory — do not claim a specific number of spots climbed.",
     veteran_milestone:
       "This isn't about the number — it's about what this person represents to the group.",
     session_recap:
