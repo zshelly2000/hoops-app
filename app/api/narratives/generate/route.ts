@@ -125,6 +125,33 @@ function displayName(p: PlayerName): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: build a player_id → rank map from playerStats sorted by avg +/-
+// ---------------------------------------------------------------------------
+
+function buildRankMap(playerStats: PlayerStatsFull[]): Map<string, number> {
+  const rankMap = new Map<string, number>()
+  ;[...playerStats]
+    .filter((ps) => ps.games_played > 0 && ps.avg_plus_minus !== null)
+    .sort((a, b) => (b.avg_plus_minus ?? 0) - (a.avg_plus_minus ?? 0))
+    .forEach((ps, i) => rankMap.set(ps.player_id, i + 1))
+  return rankMap
+}
+
+// ---------------------------------------------------------------------------
+// Helper: group RawGamePlayer rows by game_id
+// ---------------------------------------------------------------------------
+
+function groupByGame(gamePlayers: RawGamePlayer[]): Map<string, RawGamePlayer[]> {
+  const map = new Map<string, RawGamePlayer[]>()
+  for (const gp of gamePlayers) {
+    const arr = map.get(gp.game_id) ?? []
+    arr.push(gp)
+    map.set(gp.game_id, arr)
+  }
+  return map
+}
+
+// ---------------------------------------------------------------------------
 // Pattern detector: hot_duo
 // ---------------------------------------------------------------------------
 
@@ -132,6 +159,9 @@ function detectHotDuo(
   sessionPlayerIds: Set<string>,
   teammateStats: TeammateStatRow[],
   playerMap: Map<string, PlayerName>,
+  playerStats: PlayerStatsFull[],
+  gamePlayers: RawGamePlayer[],
+  games: RawGame[],
 ): NarrativeCandidate | null {
   const qualifying = teammateStats.filter(
     (row) =>
@@ -156,6 +186,33 @@ function detectHotDuo(
     .toString()
     .padStart(3, '0')
 
+  const p1Stats = playerStats.find((ps) => ps.player_id === best.player1_id)
+  const p2Stats = playerStats.find((ps) => ps.player_id === best.player2_id)
+
+  const withStats = playerStats.filter((ps) => ps.avg_plus_minus !== null && ps.games_played > 0)
+  const groupAvgPM = withStats.length > 0
+    ? Math.round((withStats.reduce((s, ps) => s + (ps.avg_plus_minus ?? 0), 0) / withStats.length) * 10) / 10
+    : null
+
+  // Today's games where both were on the same team
+  const byGame = groupByGame(gamePlayers)
+  const todayGamesTogether: { game_number: number; team1_score: number; team2_score: number; winning_team: 1 | 2 | null }[] = []
+  for (const [gameId, gps] of Array.from(byGame.entries())) {
+    const p1e = gps.find((gp) => gp.player_id === best.player1_id)
+    const p2e = gps.find((gp) => gp.player_id === best.player2_id)
+    if (p1e && p2e && p1e.team === p2e.team) {
+      const g = games.find((game) => game.id === gameId)
+      if (g) {
+        todayGamesTogether.push({
+          game_number: g.game_number,
+          team1_score: g.team1_score,
+          team2_score: g.team2_score,
+          winning_team: g.winning_team,
+        })
+      }
+    }
+  }
+
   return {
     narrative_type: 'hot_duo',
     headline_hint: `${displayName(p1)} & ${displayName(p2)}: ${wins}-${losses} together, .${winPctStr} win%`,
@@ -166,6 +223,10 @@ function detectHotDuo(
       wins_together: wins,
       losses_together: losses,
       win_pct_together: best.win_pct_together,
+      player1_avg_plus_minus: p1Stats?.avg_plus_minus ?? null,
+      player2_avg_plus_minus: p2Stats?.avg_plus_minus ?? null,
+      group_avg_plus_minus: groupAvgPM,
+      today_games_together: todayGamesTogether,
     },
     player_ids: [best.player1_id, best.player2_id],
     priority: Math.round(best.win_pct_together * 100),
@@ -181,8 +242,8 @@ function detectIndividualStreak(
   sessionPlayerIds: Set<string>,
   gameLog: GameLogRow[],
   playerMap: Map<string, PlayerName>,
+  playerStats: PlayerStatsFull[],
 ): NarrativeCandidate | null {
-  // Group log by player (already sorted ascending by session_date)
   const playerLogs = new Map<string, GameLogRow[]>()
   for (const row of gameLog) {
     if (!sessionPlayerIds.has(row.player_id)) continue
@@ -209,10 +270,22 @@ function detectIndividualStreak(
   const p = playerMap.get(best.playerId)
   if (!p) return null
 
+  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
+  const rankMap = buildRankMap(playerStats)
+  const streakLogs = (playerLogs.get(best.playerId) ?? []).slice(-best.streak)
+
   return {
     narrative_type: 'individual_streak',
     headline_hint: `${displayName(p)} has won ${best.streak} straight`,
-    body_data: { player_id: best.playerId, streak: best.streak },
+    body_data: {
+      player_id: best.playerId,
+      streak: best.streak,
+      streak_margins: streakLogs.map((row) => row.plus_minus),
+      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
+      rank: rankMap.get(best.playerId) ?? null,
+      total_wins: psEntry?.wins ?? null,
+      games_played: psEntry?.games_played ?? null,
+    },
     player_ids: [best.playerId],
     priority: best.streak * 10,
     angle_options: ['momentum', 'confidence', 'unstoppable', 'hot_hand', 'quietly_dominant'],
@@ -227,6 +300,7 @@ function detectColdStreak(
   sessionPlayerIds: Set<string>,
   gameLog: GameLogRow[],
   playerMap: Map<string, PlayerName>,
+  playerStats: PlayerStatsFull[],
 ): NarrativeCandidate | null {
   const playerLogs = new Map<string, GameLogRow[]>()
   for (const row of gameLog) {
@@ -254,10 +328,21 @@ function detectColdStreak(
   const p = playerMap.get(best.playerId)
   if (!p) return null
 
+  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
+  const rankMap = buildRankMap(playerStats)
+  const streakLogs = (playerLogs.get(best.playerId) ?? []).slice(-best.streak)
+
   return {
     narrative_type: 'cold_streak',
     headline_hint: `${displayName(p)} has dropped ${best.streak} in a row`,
-    body_data: { player_id: best.playerId, streak: best.streak },
+    body_data: {
+      player_id: best.playerId,
+      streak: best.streak,
+      streak_margins: streakLogs.map((row) => row.plus_minus),
+      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
+      rank: rankMap.get(best.playerId) ?? null,
+      games_played: psEntry?.games_played ?? null,
+    },
     player_ids: [best.playerId],
     priority: 30,
     angle_options: ['bounce_back', 'due_for_a_win', 'resilience', 'searching', 'turning_point'],
@@ -272,6 +357,9 @@ function detectRivalry(
   sessionPlayerIds: Set<string>,
   opponentStats: OpponentStatRow[],
   playerMap: Map<string, PlayerName>,
+  playerStats: PlayerStatsFull[],
+  gamePlayers: RawGamePlayer[],
+  games: RawGame[],
 ): NarrativeCandidate | null {
   const qualifying = opponentStats.filter(
     (row) =>
@@ -289,6 +377,25 @@ function detectRivalry(
   const p2 = playerMap.get(best.player2_id)
   if (!p1 || !p2) return null
 
+  const rankMap = buildRankMap(playerStats)
+  const p1Stats = playerStats.find((ps) => ps.player_id === best.player1_id)
+  const p2Stats = playerStats.find((ps) => ps.player_id === best.player2_id)
+
+  // Find today's matchup (p1 and p2 on opposite teams)
+  const byGame = groupByGame(gamePlayers)
+  let todayMatchupScore: string | null = null
+  for (const [gameId, gps] of Array.from(byGame.entries())) {
+    const p1e = gps.find((gp) => gp.player_id === best.player1_id)
+    const p2e = gps.find((gp) => gp.player_id === best.player2_id)
+    if (p1e && p2e && p1e.team !== p2e.team) {
+      const g = games.find((game) => game.id === gameId)
+      if (g) {
+        todayMatchupScore = `${g.team1_score}-${g.team2_score}`
+        break
+      }
+    }
+  }
+
   return {
     narrative_type: 'rivalry',
     headline_hint: `${displayName(p1)} vs ${displayName(p2)}: ${best.player1_wins}-${best.player2_wins} all-time, met again today`,
@@ -298,6 +405,11 @@ function detectRivalry(
       player1_wins: best.player1_wins,
       player2_wins: best.player2_wins,
       games_played: best.games_played,
+      player1_rank: rankMap.get(best.player1_id) ?? null,
+      player2_rank: rankMap.get(best.player2_id) ?? null,
+      player1_avg_plus_minus: p1Stats?.avg_plus_minus ?? null,
+      player2_avg_plus_minus: p2Stats?.avg_plus_minus ?? null,
+      today_matchup_score: todayMatchupScore,
     },
     player_ids: [best.player1_id, best.player2_id],
     priority: 40,
@@ -412,10 +524,37 @@ function detectClimber(
   const p = playerMap.get(best.playerId)
   if (!p) return null
 
+  const bestCurrentRank = currentRankMap.get(best.playerId) ?? 0
+  const bestPreRank = preRankMap.get(best.playerId) ?? 0
+  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
+
+  // Players they leapfrogged: preRank between new and old position
+  const playersPassedNames = preStats
+    .filter((ps) => {
+      const pr = preRankMap.get(ps.player_id) ?? Infinity
+      return pr > bestCurrentRank && pr < bestPreRank && ps.player_id !== best!.playerId
+    })
+    .slice(0, 3)
+    .map((ps) => {
+      const pName = playerMap.get(ps.player_id)
+      return pName ? displayName(pName) : ps.player_id
+    })
+
   return {
     narrative_type: 'climber',
     headline_hint: `${displayName(p)} climbed ${best.gained} spots in the rankings today`,
-    body_data: { player_id: best.playerId, spots_gained: best.gained },
+    body_data: {
+      player_id: best.playerId,
+      spots_gained: best.gained,
+      current_rank: bestCurrentRank,
+      prev_rank: bestPreRank,
+      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
+      win_pct: psEntry && psEntry.games_played > 0
+        ? Math.round((psEntry.wins / psEntry.games_played) * 100) / 100
+        : null,
+      games_played: psEntry?.games_played ?? null,
+      players_passed: playersPassedNames,
+    },
     player_ids: [best.playerId],
     priority: 50,
     angle_options: ['rising', 'statement_game', 'moving_up', 'watch_out', 'arrival'],
@@ -460,10 +599,26 @@ function detectVeteranMilestone(
   const p = playerMap.get(best.playerId)
   if (!p) return null
 
+  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
+  const withStats = playerStats.filter((ps) => ps.avg_plus_minus !== null && ps.games_played > 0)
+  const groupAvgPM = withStats.length > 0
+    ? Math.round((withStats.reduce((s, ps) => s + (ps.avg_plus_minus ?? 0), 0) / withStats.length) * 10) / 10
+    : null
+
   return {
     narrative_type: 'veteran_milestone',
     headline_hint: `${displayName(p)} played their ${best.milestone}th game today`,
-    body_data: { player_id: best.playerId, milestone: best.milestone },
+    body_data: {
+      player_id: best.playerId,
+      milestone: best.milestone,
+      wins: psEntry?.wins ?? null,
+      losses: psEntry?.losses ?? null,
+      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
+      win_pct: psEntry && psEntry.games_played > 0
+        ? Math.round((psEntry.wins / psEntry.games_played) * 100) / 100
+        : null,
+      group_avg_plus_minus: groupAvgPM,
+    },
     player_ids: [best.playerId],
     priority: best.priority,
     angle_options: ['milestone', 'longevity', 'dedication', 'veteran', 'journey'],
@@ -477,6 +632,10 @@ function detectVeteranMilestone(
 function detectSessionRecap(
   games: RawGame[],
   gamePlayers: RawGamePlayer[],
+  gameLog: GameLogRow[],
+  sessionGameIds: Set<string>,
+  playerStats: PlayerStatsFull[],
+  playerMap: Map<string, PlayerName>,
 ): NarrativeCandidate {
   const totalGames = games.length
   const uniquePlayers = new Set(gamePlayers.map((gp) => gp.player_id)).size
@@ -501,6 +660,47 @@ function detectSessionRecap(
     if (margin < lowestMargin) { lowestMargin = margin; closestGame = game }
   }
 
+  // Top performer and session leaders
+  const todayLog = gameLog.filter((row) => sessionGameIds.has(row.game_id))
+  const playerSessionStats = new Map<string, { total_pm: number; wins: number; total: number }>()
+  for (const row of todayLog) {
+    const existing = playerSessionStats.get(row.player_id) ?? { total_pm: 0, wins: 0, total: 0 }
+    playerSessionStats.set(row.player_id, {
+      total_pm: existing.total_pm + row.plus_minus,
+      wins: existing.wins + (row.is_win ? 1 : 0),
+      total: existing.total + 1,
+    })
+  }
+
+  let topPerformerName: string | null = null
+  let topPerformerAvgPM: number | null = null
+  let mostWinsName: string | null = null
+  let mostWinsCount = 0
+  let undefeatedPlayer: string | null = null
+
+  for (const [pid, stats] of Array.from(playerSessionStats.entries())) {
+    const avgPM = stats.total > 0
+      ? Math.round((stats.total_pm / stats.total) * 10) / 10
+      : null
+    if (avgPM !== null && (topPerformerAvgPM === null || avgPM > topPerformerAvgPM)) {
+      topPerformerAvgPM = avgPM
+      const pn = playerMap.get(pid)
+      topPerformerName = pn ? displayName(pn) : null
+    }
+    if (stats.wins > mostWinsCount) {
+      mostWinsCount = stats.wins
+      const pn = playerMap.get(pid)
+      mostWinsName = pn ? displayName(pn) : null
+    }
+    if (stats.wins === stats.total && stats.total >= 3) {
+      const pn = playerMap.get(pid)
+      undefeatedPlayer = pn ? displayName(pn) : null
+    }
+  }
+
+  // Suppress unused warning — playerStats available for future enrichment
+  void playerStats
+
   return {
     narrative_type: 'session_recap',
     headline_hint: `${totalGames} games, ${uniquePlayers} players, ${totalPoints} total points`,
@@ -520,6 +720,11 @@ function detectSessionRecap(
       biggest_blowout: biggestBlowout
         ? `${biggestBlowout.team1_score}-${biggestBlowout.team2_score} (margin: ${highestMargin})`
         : 'N/A',
+      top_performer: topPerformerName,
+      top_performer_avg_pm: topPerformerAvgPM,
+      most_wins_player: mostWinsName,
+      most_wins_count: mostWinsCount,
+      undefeated_player: undefeatedPlayer,
     },
     player_ids: [],
     priority: 20,
@@ -531,7 +736,10 @@ function detectSessionRecap(
 // Pattern detector: defensive_battle
 // ---------------------------------------------------------------------------
 
-function detectDefensiveBattle(games: RawGame[]): NarrativeCandidate | null {
+function detectDefensiveBattle(
+  games: RawGame[],
+  gamePlayers: RawGamePlayer[],
+): NarrativeCandidate | null {
   let lowestCombined = Infinity
   let targetGame: RawGame | null = null
 
@@ -545,14 +753,22 @@ function detectDefensiveBattle(games: RawGame[]): NarrativeCandidate | null {
 
   if (!targetGame || lowestCombined > 14) return null
 
+  const gamePlayersInGame = gamePlayers.filter((gp) => gp.game_id === targetGame!.id)
+  const team1Players = gamePlayersInGame.filter((gp) => gp.team === 1).map((gp) => displayName(gp.players))
+  const team2Players = gamePlayersInGame.filter((gp) => gp.team === 2).map((gp) => displayName(gp.players))
+
   return {
     narrative_type: 'defensive_battle',
     headline_hint: `Lowest scoring game: ${targetGame.team1_score}-${targetGame.team2_score}, combined ${lowestCombined}`,
     body_data: {
       game_id: targetGame.id,
+      game_number: targetGame.game_number,
+      total_games_in_session: games.length,
       team1_score: targetGame.team1_score,
       team2_score: targetGame.team2_score,
       combined: lowestCombined,
+      team1_players: team1Players,
+      team2_players: team2Players,
     },
     player_ids: [],
     priority: 25,
@@ -570,7 +786,10 @@ function detectDefensiveBattle(games: RawGame[]): NarrativeCandidate | null {
 // Pattern detector: shootout
 // ---------------------------------------------------------------------------
 
-function detectShootout(games: RawGame[]): NarrativeCandidate | null {
+function detectShootout(
+  games: RawGame[],
+  gamePlayers: RawGamePlayer[],
+): NarrativeCandidate | null {
   let highestCombined = -Infinity
   let targetGame: RawGame | null = null
 
@@ -584,14 +803,22 @@ function detectShootout(games: RawGame[]): NarrativeCandidate | null {
 
   if (!targetGame || highestCombined < 28) return null
 
+  const gamePlayersInGame = gamePlayers.filter((gp) => gp.game_id === targetGame!.id)
+  const team1Players = gamePlayersInGame.filter((gp) => gp.team === 1).map((gp) => displayName(gp.players))
+  const team2Players = gamePlayersInGame.filter((gp) => gp.team === 2).map((gp) => displayName(gp.players))
+
   return {
     narrative_type: 'shootout',
     headline_hint: `Highest scoring game: ${targetGame.team1_score}-${targetGame.team2_score}, combined ${highestCombined}`,
     body_data: {
       game_id: targetGame.id,
+      game_number: targetGame.game_number,
+      total_games_in_session: games.length,
       team1_score: targetGame.team1_score,
       team2_score: targetGame.team2_score,
       combined: highestCombined,
+      team1_players: team1Players,
+      team2_players: team2Players,
     },
     player_ids: [],
     priority: 25,
@@ -613,6 +840,7 @@ function detectPerfectSession(
   gameLog: GameLogRow[],
   sessionGameIds: Set<string>,
   playerMap: Map<string, PlayerName>,
+  playerStats: PlayerStatsFull[],
 ): NarrativeCandidate | null {
   const todayLog = gameLog.filter((row) => sessionGameIds.has(row.game_id))
 
@@ -639,10 +867,23 @@ function detectPerfectSession(
   const p = playerMap.get(best.playerId)
   if (!p) return null
 
+  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
+  const rankMap = buildRankMap(playerStats)
+  const wonGameMargins = todayLog
+    .filter((row) => row.player_id === best!.playerId && row.is_win)
+    .map((row) => row.plus_minus)
+
   return {
     narrative_type: 'perfect_session',
     headline_hint: `${displayName(p)} went ${best.games}-0 today`,
-    body_data: { player_id: best.playerId, games: best.games, wins: best.games },
+    body_data: {
+      player_id: best.playerId,
+      games: best.games,
+      wins: best.games,
+      won_game_margins: wonGameMargins,
+      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
+      rank: rankMap.get(best.playerId) ?? null,
+    },
     player_ids: [best.playerId],
     priority: 55,
     angle_options: ['untouchable', 'perfect', 'dominant', 'undefeated', 'immovable'],
@@ -680,7 +921,6 @@ function detectReturner(
   let firstReturner: string | null = null
   for (const playerId of Array.from(sessionPlayerIds)) {
     if (playedRecentlyIds.has(playerId)) continue
-    // No non-today entries in 30-day log — check they have prior history
     const ps = statsMap.get(playerId)
     const todayCount = todayGameCount.get(playerId) ?? 0
     if (!ps || ps.games_played <= todayCount) continue
@@ -693,10 +933,43 @@ function detectReturner(
   const p = playerMap.get(firstReturner)
   if (!p) return null
 
+  // How many days away — last non-today game entry from gameLog (sorted ascending)
+  const nonTodayLogs = gameLog.filter(
+    (row) => !sessionGameIds.has(row.game_id) && row.player_id === firstReturner,
+  )
+  const lastGameDate = nonTodayLogs.length > 0
+    ? nonTodayLogs[nonTodayLogs.length - 1].session_date
+    : null
+  let daysAway = 30 // minimum by definition (not in 30-day log)
+  if (lastGameDate) {
+    const last = new Date(lastGameDate + 'T12:00:00')
+    daysAway = Math.round((Date.now() - last.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  // W-L before leaving = total minus today's contribution
+  const psEntry = statsMap.get(firstReturner)
+  const todayCount = todayGameCount.get(firstReturner) ?? 0
+  const todayLogs = gameLog.filter(
+    (row) => sessionGameIds.has(row.game_id) && row.player_id === firstReturner,
+  )
+  const todayWins = todayLogs.filter((row) => row.is_win).length
+  const preWins = psEntry != null ? psEntry.wins - todayWins : null
+  const preLosses = psEntry != null
+    ? (psEntry.games_played - todayCount) - (psEntry.wins - todayWins)
+    : null
+  const returnLosses = todayCount - todayWins
+
   return {
     narrative_type: 'returner',
     headline_hint: `${displayName(p)} returned after 30+ days away`,
-    body_data: { player_id: firstReturner, days_away: 30 },
+    body_data: {
+      player_id: firstReturner,
+      days_away: daysAway,
+      pre_wins: preWins,
+      pre_losses: preLosses,
+      return_result: `${todayWins}W-${returnLosses}L`,
+      return_margins: todayLogs.map((row) => row.plus_minus),
+    },
     player_ids: [firstReturner],
     priority: 35,
     angle_options: [
@@ -760,6 +1033,16 @@ async function generateNarrative(
       })
       .filter((n): n is string => n !== null)
 
+    const runLabel = new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    })
+
+    const bd = candidate.body_data as Record<string, unknown>
+    const singleGameNote =
+      candidate.narrative_type === 'defensive_battle' || candidate.narrative_type === 'shootout'
+        ? `\nThis describes one specific game (Game ${bd.game_number as number}) within a session that had ${bd.total_games_in_session as number} games total — write about this game specifically, not the whole session.`
+        : ''
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -770,7 +1053,9 @@ async function generateNarrative(
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 200,
-        system: `You are a sports columnist in the tradition of Zach Lowe and Wright Thompson — you find the human story inside the numbers. Your writing has three qualities:
+        system: `This is pickup basketball — informal, self-organized, no coaches, no refs. Players show up voluntarily on their own time, teams are picked fresh every game, and there are no permanent rosters. Someone built a real stats tracking system for this group, which means every number means more than it would in a casual setting — these players care enough to measure themselves. Write with awareness of that context: showing up consistently is an achievement, a win streak is hard because you play with different teammates every game, and climbing the rankings means something because everyone here is genuinely trying.
+
+You are a sports columnist in the tradition of Zach Lowe and Wright Thompson — you find the human story inside the numbers. Your writing has three qualities:
 
 1. CLARITY FIRST: Every sentence must be immediately understood by someone who wasn't at the run. No metaphors that require interpretation. If a sentence needs re-reading, rewrite it.
 
@@ -778,9 +1063,9 @@ async function generateNarrative(
 
 3. PUNCHY NOT POETIC: Write like Zach Lowe texting you about the game — sharp, confident, specific. Not like a literary essay. The insight should land immediately, not after reflection.
 
-Rules: use first names only, always reference specific numbers, two sentences maximum for body copy — if you cannot say it clearly in two sentences, say less not more, headline maximum 8 words, no exclamation points, no clichés.
+Rules: use first names only, always reference specific numbers, two sentences maximum for body copy — if you cannot say it clearly in two sentences, say less not more, headline maximum 8 words, no exclamation points, no clichés. Never use gendered language. This group includes players of all genders. Use "players," "runners," "the group," or names — never "men," "guys," "brothers," or any gendered term.
 
-Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show," "mornings now look different," "borrowed quietly," "its own kind of," "that is its own," and any phrase that uses abstract nouns where concrete facts would work better.
+Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show," "mornings now look different," "borrowed quietly," "its own kind of," "that is its own," "not just," "not only," "but also," "it is not X it is Y," "that is not X that is Y," and any phrase that uses abstract nouns where concrete facts would work better.
 
 When referencing the session, use the day and date — "Wednesday's run," "last Thursday," "on May 29th" — never a venue name.
 
@@ -796,7 +1081,7 @@ ${candidate.previous_text ? `Previous version (do not repeat phrases or structur
 Key facts: ${candidate.headline_hint}
 Stats: ${JSON.stringify(candidate.body_data)}
 Players: ${playerNames.join(', ')}
-Run: ${new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+Run: ${runLabel}${singleGameNote}
 ${getAngleInstruction(candidate.narrative_type)}`,
           },
         ],
@@ -926,17 +1211,17 @@ export async function POST(request: Request) {
     // Run all 12 pattern detectors (each wrapped in try/catch)
     // -----------------------------------------------------------------------
     const detectors: Array<() => NarrativeCandidate | null> = [
-      () => detectHotDuo(sessionPlayerIds, teammateStats, playerMap),
-      () => detectIndividualStreak(sessionPlayerIds, gameLog, playerMap),
-      () => detectColdStreak(sessionPlayerIds, gameLog, playerMap),
-      () => detectRivalry(sessionPlayerIds, opponentStats, playerMap),
+      () => detectHotDuo(sessionPlayerIds, teammateStats, playerMap, playerStats, gamePlayers, games),
+      () => detectIndividualStreak(sessionPlayerIds, gameLog, playerMap, playerStats),
+      () => detectColdStreak(sessionPlayerIds, gameLog, playerMap, playerStats),
+      () => detectRivalry(sessionPlayerIds, opponentStats, playerMap, playerStats, gamePlayers, games),
       () => detectUpset(gameStrength, games),
       () => detectClimber(sessionPlayerIds, playerStats, gameLog, sessionGameIds, playerMap),
       () => detectVeteranMilestone(sessionPlayerIds, playerStats, playerMap),
-      () => detectSessionRecap(games, gamePlayers),
-      () => detectDefensiveBattle(games),
-      () => detectShootout(games),
-      () => detectPerfectSession(gameLog, sessionGameIds, playerMap),
+      () => detectSessionRecap(games, gamePlayers, gameLog, sessionGameIds, playerStats, playerMap),
+      () => detectDefensiveBattle(games, gamePlayers),
+      () => detectShootout(games, gamePlayers),
+      () => detectPerfectSession(gameLog, sessionGameIds, playerMap, playerStats),
       () => detectReturner(sessionPlayerIds, gameLog, sessionGameIds, playerStats, playerMap),
     ]
 
