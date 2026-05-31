@@ -18,7 +18,7 @@ export function ScoreEntry({ team1Score, team2Score, onTeam1Change, onTeam2Chang
       />
       <ScoreInput
         label="Team 2"
-        labelColor="text-orange-400"
+        labelColor="text-[#fb923c]"
         value={team2Score}
         onChange={onTeam2Change}
       />
@@ -50,7 +50,7 @@ function ScoreInput({
         placeholder="0"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-4 text-center text-3xl font-bold text-white focus:border-orange-500 focus:outline-none"
+        className="w-full rounded-xl border border-white/[.06] bg-surface-raised py-4 text-center text-3xl font-bold text-[#f0f0f8] focus:border-orange-400 focus:outline-none"
       />
     </div>
   )

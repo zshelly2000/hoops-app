@@ -124,7 +124,7 @@ function SwipeableTile({
     ? 'bg-blue-900/60 border-blue-700 text-blue-100'
     : isTeam2Style
     ? 'bg-orange-900/60 border-orange-700 text-orange-100'
-    : 'bg-zinc-800 border-zinc-700 text-zinc-200'
+    : 'bg-surface-raised border-white/[.06] text-[#f0f0f8]'
 
   return (
     <button
@@ -238,12 +238,12 @@ export function ThreeColumnAssigner({
           placeholder="Search players…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-lg border border-zinc-700 bg-zinc-800 py-2.5 pl-4 pr-9 text-base text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none touch-manipulation"
+          className="w-full rounded-lg border border-white/[.06] bg-surface-raised py-2.5 pl-4 pr-9 text-base text-[#f0f0f8] placeholder-slate-400 focus:border-orange-400 focus:outline-none touch-manipulation"
         />
         {search && (
           <button
             onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-300"
             aria-label="Clear search"
           >
             ✕
@@ -256,10 +256,10 @@ export function ThreeColumnAssigner({
         <div className="text-center text-xs font-black uppercase tracking-wider text-blue-400">
           T1 · {team1Players.length}
         </div>
-        <div className="text-center text-xs font-bold uppercase tracking-wider text-zinc-500">
+        <div className="text-center text-xs font-bold uppercase tracking-wider text-slate-400">
           Bench
         </div>
-        <div className="text-center text-xs font-black uppercase tracking-wider text-orange-400">
+        <div className="text-center text-xs font-black uppercase tracking-wider text-[#fb923c]">
           T2 · {team2Players.length}
         </div>
       </div>
@@ -268,7 +268,7 @@ export function ThreeColumnAssigner({
       <div className="grid grid-cols-3 gap-1.5">
 
         {/* Team 1 — blue */}
-        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-blue-900 bg-zinc-900 p-1">
+        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-blue-900 bg-surface p-1">
           {team1Players.map((p) => renderTile(p, 'team1'))}
           {team1Players.length === 0 && (
             <div className="flex h-full items-center justify-center px-1">
@@ -280,17 +280,17 @@ export function ThreeColumnAssigner({
         </div>
 
         {/* Bench — search-filtered players, assigned ones as ghosts at bottom */}
-        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 p-1 touch-pan-y">
+        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-white/[.06] bg-surface p-1 touch-pan-y">
           {benchPlayers.map((p) => renderTile(p, 'bench'))}
           {benchPlayers.length === 0 && (
             <div className="flex h-full items-center justify-center">
-              <span className="text-[10px] text-zinc-700">no players</span>
+              <span className="text-[10px] text-[#555570]">no players</span>
             </div>
           )}
         </div>
 
         {/* Team 2 — orange */}
-        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-orange-900 bg-zinc-900 p-1">
+        <div className="flex h-72 flex-col gap-1 overflow-y-auto rounded-xl border border-orange-900 bg-surface p-1">
           {team2Players.map((p) => renderTile(p, 'team2'))}
           {team2Players.length === 0 && (
             <div className="flex h-full items-center justify-center px-1">

@@ -11,14 +11,14 @@ interface Props {
 
 const teamColors = {
   1: 'bg-blue-600 text-white',
-  2: 'bg-orange-500 text-white',
+  2: 'bg-orange-400 text-white',
 }
 
 export function PlayerBadge({ player, team, onRemove }: Props) {
   return (
     <span
       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-sm font-medium ${
-        team ? teamColors[team] : 'bg-zinc-700 text-zinc-200'
+        team ? teamColors[team] : 'bg-[#2a2a3a] text-[#f0f0f8]'
       }`}
     >
       {displayName(player)}

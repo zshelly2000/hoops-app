@@ -12,6 +12,11 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-geist-sans)', 'system-ui', 'sans-serif'],
       },
+      colors: {
+        canvas: '#08080e',
+        surface: '#111118',
+        'surface-raised': '#1a1a28',
+      },
     },
   },
   plugins: [],

@@ -13,7 +13,7 @@ interface Props {
 
 const teamStyles: Record<TeamSlot, string> = {
   1: 'border-blue-500 bg-blue-900/50 text-blue-100',
-  2: 'border-orange-500 bg-orange-900/50 text-orange-100',
+  2: 'border-orange-400 bg-orange-900/50 text-orange-100',
 }
 
 const teamLabels: Record<TeamSlot, string> = {
@@ -70,7 +70,7 @@ export function PlayerGrid({ players, selections, lastPlayed, onToggle }: Props)
         placeholder="Search players..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none"
+        className="w-full rounded-lg border border-white/[.06] bg-surface-raised px-4 py-2.5 text-sm text-[#f0f0f8] placeholder-slate-400 focus:border-orange-400 focus:outline-none"
       />
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -84,7 +84,7 @@ export function PlayerGrid({ players, selections, lastPlayed, onToggle }: Props)
             'flex min-h-[64px] flex-col items-center justify-center rounded-xl border-2 px-2 py-3 text-center text-sm font-semibold transition-all active:scale-95 cursor-pointer select-none'
           const colorStyle = team
             ? `${teamStyles[team]}`
-            : 'border-zinc-700 bg-zinc-800 text-zinc-200 hover:border-zinc-500'
+            : 'border-white/[.06] bg-surface-raised text-[#f0f0f8] hover:border-white/20'
           const opacityStyle = isAssigned ? 'opacity-50' : ''
 
           return (
@@ -110,7 +110,7 @@ export function PlayerGrid({ players, selections, lastPlayed, onToggle }: Props)
         })}
 
         {filtered.length === 0 && (
-          <p className="col-span-3 py-6 text-center text-sm text-zinc-500 sm:col-span-4">
+          <p className="col-span-3 py-6 text-center text-sm text-slate-400 sm:col-span-4">
             No players found
           </p>
         )}

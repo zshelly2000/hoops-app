@@ -249,32 +249,32 @@ export default function CourtsidePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-950">
-        <p className="text-zinc-500">Loading…</p>
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
+        <p className="text-slate-400">Loading…</p>
       </div>
     )
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
+    <main className="min-h-screen bg-canvas pb-24 pt-4">
       <div className="mx-auto max-w-lg px-4">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-black text-white">Courtside</h1>
             {session && (
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-slate-400">
                 {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
                   weekday: 'short', month: 'short', day: 'numeric',
                 })}
                 {' · '}
-                <span className="text-orange-400 font-semibold">Game {gameCount + 1}</span>
+                <span className="text-[#fb923c] font-semibold">Game {gameCount + 1}</span>
               </p>
             )}
           </div>
           <button
             onClick={() => setShowAddPlayer(true)}
-            className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+            className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 hover:border-white/20 hover:text-[#f0f0f8]"
           >
             + New Player
           </button>
@@ -282,14 +282,14 @@ export default function CourtsidePage() {
 
         {/* Start session prompt */}
         {!session ? (
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 px-6 py-12 text-center">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[.06] bg-surface px-6 py-12 text-center">
             <div className="text-5xl">🏀</div>
             <h2 className="text-xl font-bold text-white">No run today yet</h2>
-            <p className="text-sm text-zinc-500">Start a session to begin logging games.</p>
+            <p className="text-sm text-slate-400">Start a session to begin logging games.</p>
             <button
               onClick={startSession}
               disabled={startingSession}
-              className="rounded-xl bg-orange-500 px-8 py-4 text-lg font-black text-white shadow-lg disabled:opacity-50 hover:bg-orange-400 active:scale-95 transition-all"
+              className="rounded-xl bg-orange-400 px-8 py-4 text-lg font-black text-white shadow-lg disabled:opacity-50 hover:bg-orange-300 active:scale-95 transition-all"
             >
               {startingSession ? 'Starting…' : "Start Today's Run"}
             </button>
@@ -316,7 +316,7 @@ export default function CourtsidePage() {
             <button
               onClick={submitGame}
               disabled={!canSubmit}
-              className="w-full rounded-2xl bg-orange-500 py-5 text-xl font-black text-white shadow-lg transition-all hover:bg-orange-400 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full rounded-2xl bg-orange-400 py-5 text-xl font-black text-white shadow-lg transition-all hover:bg-orange-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {submitting ? 'Saving…' : 'Submit Game'}
             </button>
@@ -326,7 +326,7 @@ export default function CourtsidePage() {
               <div className="mt-2 flex justify-center">
                 <button
                   onClick={() => setShowEndSession(true)}
-                  className="rounded-xl border border-zinc-700 px-6 py-3 text-sm font-semibold text-zinc-400 transition-all hover:border-zinc-500 hover:text-zinc-200"
+                  className="rounded-xl border border-white/[.06] px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-[#f0f0f8]"
                 >
                   End Session 📰
                 </button>
@@ -346,23 +346,23 @@ export default function CourtsidePage() {
       {/* Keep Winners bottom sheet */}
       {keepWinnersSheet && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
-          <div className="w-full max-w-lg rounded-t-3xl bg-zinc-900 px-6 pb-12 pt-6 shadow-2xl">
-            <div className="mb-1 text-center text-2xl font-black text-white">
+          <div className="w-full max-w-lg rounded-t-3xl bg-surface px-6 pb-12 pt-6 shadow-2xl">
+            <div className="mb-1 text-center text-2xl font-black text-[#f0f0f8]">
               Game {keepWinnersSheet.gameNumber} saved! 🏆
             </div>
-            <p className="mb-8 text-center text-sm text-zinc-500">
+            <p className="mb-8 text-center text-sm text-slate-400">
               What happens next?
             </p>
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={handleNewGame}
-                className="rounded-2xl border border-zinc-700 py-5 text-lg font-bold text-white transition-all hover:bg-zinc-800 active:scale-95"
+                className="rounded-2xl border border-white/[.06] py-5 text-lg font-bold text-[#f0f0f8] transition-all hover:bg-surface-raised active:scale-95"
               >
                 New Game
               </button>
               <button
                 onClick={handleKeepWinners}
-                className="rounded-2xl bg-orange-500 py-5 text-lg font-bold text-white transition-all hover:bg-orange-400 active:scale-95"
+                className="rounded-2xl bg-orange-400 py-5 text-lg font-bold text-white transition-all hover:bg-orange-300 active:scale-95"
               >
                 Keep Winners
               </button>
@@ -374,23 +374,23 @@ export default function CourtsidePage() {
       {/* End Session confirmation bottom sheet */}
       {showEndSession && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
-          <div className="w-full max-w-lg rounded-t-3xl bg-zinc-900 px-6 pb-12 pt-6 shadow-2xl">
-            <div className="mb-1 text-center text-xl font-black text-white">
+          <div className="w-full max-w-lg rounded-t-3xl bg-surface px-6 pb-12 pt-6 shadow-2xl">
+            <div className="mb-1 text-center text-xl font-black text-[#f0f0f8]">
               End today&apos;s run?
             </div>
-            <p className="mb-8 text-center text-sm text-zinc-500">
+            <p className="mb-8 text-center text-sm text-slate-400">
               This will generate your Rundown story.
             </p>
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => setShowEndSession(false)}
-                className="rounded-2xl border border-zinc-700 py-4 text-base font-bold text-white transition-all hover:bg-zinc-800 active:scale-95"
+                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#f0f0f8] transition-all hover:bg-surface-raised active:scale-95"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEndSession}
-                className="rounded-2xl border border-zinc-600 py-4 text-base font-bold text-zinc-200 transition-all hover:bg-zinc-800 active:scale-95"
+                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-slate-300 transition-all hover:bg-surface-raised active:scale-95"
               >
                 End Session
               </button>

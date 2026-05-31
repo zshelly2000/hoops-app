@@ -40,7 +40,7 @@ function TeamColumn({
       : 'bg-orange-900/60 text-orange-100 border border-orange-700'
 
   return (
-    <div className={`rounded-xl border ${borderColor} bg-zinc-900 p-3`}>
+    <div className={`rounded-xl border ${borderColor} bg-surface p-3`}>
       <div className={`mb-2 flex items-center justify-between ${headerColor}`}>
         <span className="text-xs font-bold uppercase tracking-wider">{label}</span>
         <span className="text-sm font-semibold">{players.length}</span>
@@ -57,7 +57,7 @@ function TeamColumn({
           </button>
         ))}
         {players.length === 0 && (
-          <p className="text-xs text-zinc-600">Tap players below</p>
+          <p className="text-xs text-[#555570]">Tap players below</p>
         )}
       </div>
     </div>

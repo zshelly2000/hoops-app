@@ -44,7 +44,7 @@ export function AddPlayerModal({ onClose, onAdded }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
-      <div className="w-full max-w-sm rounded-2xl bg-zinc-900 p-6 shadow-xl">
+      <div className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-xl">
         <h2 className="mb-4 text-lg font-bold text-white">Add New Player</h2>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
@@ -55,14 +55,14 @@ export function AddPlayerModal({ onClose, onAdded }: Props) {
             onChange={(e) => setName(e.target.value)}
             autoFocus
             required
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none"
+            className="w-full rounded-lg border border-white/[.06] bg-surface-raised px-4 py-3 text-[#f0f0f8] placeholder-slate-400 focus:border-orange-400 focus:outline-none"
           />
           <input
             type="text"
             placeholder="Nickname (optional)"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            className="w-full rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-white placeholder-zinc-500 focus:border-orange-500 focus:outline-none"
+            className="w-full rounded-lg border border-white/[.06] bg-surface-raised px-4 py-3 text-[#f0f0f8] placeholder-slate-400 focus:border-orange-400 focus:outline-none"
           />
 
           {error && <p className="text-sm text-red-400">{error}</p>}
@@ -71,14 +71,14 @@ export function AddPlayerModal({ onClose, onAdded }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 hover:bg-zinc-800"
+              className="flex-1 rounded-xl border border-white/[.06] py-3 font-semibold text-slate-300 hover:bg-surface-raised"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || !name.trim()}
-              className="flex-1 rounded-xl bg-orange-500 py-3 font-semibold text-white disabled:opacity-50 hover:bg-orange-400"
+              className="flex-1 rounded-xl bg-orange-400 py-3 font-semibold text-white disabled:opacity-50 hover:bg-orange-300"
             >
               {saving ? 'Adding…' : 'Add Player'}
             </button>

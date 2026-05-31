@@ -18,13 +18,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#09090b',
+  themeColor: '#08080e',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistSans.variable} bg-zinc-950 font-sans antialiased`}>
+      <body className={`${geistSans.variable} bg-canvas font-sans antialiased`}>
         {children}
         <Nav />
       </body>

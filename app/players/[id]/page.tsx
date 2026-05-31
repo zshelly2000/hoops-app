@@ -87,38 +87,38 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
     }
   }
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-500">Loading…</div>
-  if (error || !player) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-red-400">{error || 'Not found'}</div>
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-canvas text-slate-400">Loading…</div>
+  if (error || !player) return <div className="flex min-h-screen items-center justify-center bg-canvas text-red-400">{error || 'Not found'}</div>
 
   const avgPm = stats?.avg_plus_minus ?? 0
   const pmColor = avgPm > 0 ? 'text-green-400' : avgPm < 0 ? 'text-red-400' : 'text-zinc-400'
 
   return (
-    <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
+    <main className="min-h-screen bg-canvas pb-24 pt-4">
       <div className="mx-auto max-w-lg px-4">
-        <Link href="/players" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300">
+        <Link href="/players" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-300">
           ← Roster
         </Link>
 
         {/* Player header */}
-        <div className="mb-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+        <div className="mb-6 rounded-2xl border border-white/[.06] bg-surface p-5">
           {editName ? (
             <div className="flex flex-col gap-2">
               <input
                 value={nameVal}
                 onChange={(e) => setNameVal(e.target.value)}
                 placeholder="Full name"
-                className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                className="rounded-lg border border-white/[.06] bg-surface-raised px-3 py-2 text-white focus:border-orange-400 focus:outline-none"
               />
               <input
                 value={nicknameVal}
                 onChange={(e) => setNicknameVal(e.target.value)}
                 placeholder="Nickname (optional)"
-                className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-white focus:border-orange-500 focus:outline-none"
+                className="rounded-lg border border-white/[.06] bg-surface-raised px-3 py-2 text-white focus:border-orange-400 focus:outline-none"
               />
               <div className="flex gap-2">
-                <button onClick={() => setEditName(false)} className="flex-1 rounded-lg border border-zinc-700 py-2 text-sm text-zinc-400">Cancel</button>
-                <button onClick={saveEdit} className="flex-1 rounded-lg bg-orange-500 py-2 text-sm font-semibold text-white">Save</button>
+                <button onClick={() => setEditName(false)} className="flex-1 rounded-lg border border-white/[.06] py-2 text-sm text-slate-400">Cancel</button>
+                <button onClick={saveEdit} className="flex-1 rounded-lg bg-orange-400 py-2 text-sm font-semibold text-white">Save</button>
               </div>
             </div>
           ) : (
@@ -128,15 +128,15 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
                   {player.nickname ?? player.name}
                 </h1>
                 {player.nickname && (
-                  <p className="text-sm text-zinc-500">{player.name}</p>
+                  <p className="text-sm text-slate-400">{player.name}</p>
                 )}
-                <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${player.is_active ? 'bg-green-900/50 text-green-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${player.is_active ? 'bg-green-900/50 text-green-400' : 'bg-surface-raised text-slate-400'}`}>
                   {player.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => setEditName(true)} className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-zinc-500">Edit</button>
-                <button onClick={toggleActive} className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:border-zinc-500">
+                <button onClick={() => setEditName(true)} className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs text-slate-400 hover:border-white/20">Edit</button>
+                <button onClick={toggleActive} className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs text-slate-400 hover:border-white/20">
                   {player.is_active ? 'Deactivate' : 'Activate'}
                 </button>
               </div>
@@ -155,24 +155,24 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
         )}
 
         {/* Game log */}
-        <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-zinc-500">Game Log</h2>
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wider text-slate-400">Game Log</h2>
 
         {games.length === 0 ? (
-          <p className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">No games logged yet.</p>
+          <p className="rounded-xl border border-white/[.06] p-6 text-center text-sm text-slate-400">No games logged yet.</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-zinc-800">
+          <div className="overflow-x-auto rounded-xl border border-white/[.06]">
             <table className="w-full text-sm">
-              <thead className="bg-zinc-900">
+              <thead className="bg-surface">
                 <tr>
-                  <th className="px-3 py-2 text-left text-xs text-zinc-500">Date</th>
-                  <th className="px-3 py-2 text-left text-xs text-zinc-500">Game</th>
-                  <th className="px-3 py-2 text-center text-xs text-zinc-500">Team</th>
-                  <th className="px-3 py-2 text-center text-xs text-zinc-500">Result</th>
-                  <th className="px-3 py-2 text-center text-xs text-zinc-500">Score</th>
-                  <th className="px-3 py-2 text-right text-xs text-zinc-500">+/-</th>
+                  <th className="px-3 py-2 text-left text-xs text-slate-400">Date</th>
+                  <th className="px-3 py-2 text-left text-xs text-slate-400">Game</th>
+                  <th className="px-3 py-2 text-center text-xs text-slate-400">Team</th>
+                  <th className="px-3 py-2 text-center text-xs text-slate-400">Result</th>
+                  <th className="px-3 py-2 text-center text-xs text-slate-400">Score</th>
+                  <th className="px-3 py-2 text-right text-xs text-slate-400">+/-</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-white/[.06]">
                 {games.map((g) => {
                   const won = g.winning_team === g.team
                   const lost = g.winning_team !== null && g.winning_team !== g.team
@@ -182,18 +182,18 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
                   const pmC = pmVal > 0 ? 'text-green-400' : pmVal < 0 ? 'text-red-400' : 'text-zinc-400'
 
                   return (
-                    <tr key={g.id} className="hover:bg-zinc-900/40">
-                      <td className="px-3 py-2 text-zinc-400">
+                    <tr key={g.id} className="hover:bg-surface/40">
+                      <td className="px-3 py-2 text-slate-400">
                         {new Date(g.session_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                       </td>
-                      <td className="px-3 py-2 text-zinc-500">#{g.game_number}</td>
+                      <td className="px-3 py-2 text-slate-400">#{g.game_number}</td>
                       <td className="px-3 py-2 text-center">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${g.team === 1 ? 'bg-blue-900/60 text-blue-300' : 'bg-orange-900/60 text-orange-300'}`}>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${g.team === 1 ? 'bg-blue-900/60 text-blue-300' : 'bg-orange-900/60 text-[#fb923c]'}`}>
                           T{g.team}
                         </span>
                       </td>
                       <td className={`px-3 py-2 text-center font-bold ${resultColor}`}>{resultLabel}</td>
-                      <td className="px-3 py-2 text-center text-zinc-300">
+                      <td className="px-3 py-2 text-center text-slate-300">
                         {g.team1_score}–{g.team2_score}
                       </td>
                       <td className={`px-3 py-2 text-right font-semibold ${pmC}`}>
@@ -213,8 +213,8 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
 
 function StatCard({ label, value, color = 'text-white' }: { label: string; value: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 text-center">
-      <p className="mb-1 text-xs font-bold uppercase tracking-wider text-zinc-500">{label}</p>
+    <div className="rounded-xl border border-white/[.06] bg-surface p-4 text-center">
+      <p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
       <p className={`text-2xl font-black ${color}`}>{value}</p>
     </div>
   )

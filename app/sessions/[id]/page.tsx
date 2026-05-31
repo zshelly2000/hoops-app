@@ -142,15 +142,15 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
     }
   }
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-500">Loading…</div>
-  if (error || !session) return <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-red-400">{error || 'Not found'}</div>
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-canvas text-zinc-500">Loading…</div>
+  if (error || !session) return <div className="flex min-h-screen items-center justify-center bg-canvas text-red-400">{error || 'Not found'}</div>
 
   const uniquePlayers = new Set(
     games.flatMap((g) => g.game_players.map((gp) => gp.player_id)),
   ).size
 
   return (
-    <main className="min-h-screen bg-zinc-950 pb-24 pt-4">
+    <main className="min-h-screen bg-canvas pb-24 pt-4">
       <div className="mx-auto max-w-lg px-4">
         {/* Pull-to-refresh indicator */}
         {isRefreshing && (
@@ -159,7 +159,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           </div>
         )}
 
-        <Link href="/sessions" className="mb-4 inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-300">
+        <Link href="/sessions" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-300">
           ← Sessions
         </Link>
 
@@ -169,10 +169,10 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
             })}
           </h1>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-slate-400">
             {games.length} games · {uniquePlayers} players
             {session.is_complete && (
-              <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+              <span className="ml-2 rounded-full bg-surface-raised px-2 py-0.5 text-xs text-slate-400">
                 Complete
               </span>
             )}
@@ -182,14 +182,14 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               <button
                 onClick={handleReopen}
                 disabled={reopening}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+                className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:border-white/20 hover:text-[#f0f0f8] disabled:opacity-50"
               >
                 {reopening ? 'Reopening…' : 'Add More Games'}
               </button>
               <button
                 onClick={handleRegenerateRundown}
                 disabled={regenerating}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+                className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:border-white/20 hover:text-[#f0f0f8] disabled:opacity-50"
               >
                 {regenerating ? 'Regenerating…' : 'Regenerate Rundown 🔄'}
               </button>
@@ -204,20 +204,20 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
             const winnerColor = game.winning_team === 1
               ? 'text-blue-400'
               : game.winning_team === 2
-              ? 'text-orange-400'
-              : 'text-zinc-400'
+              ? 'text-[#fb923c]'
+              : 'text-slate-400'
 
             return (
-              <div key={game.id} className="rounded-2xl border border-zinc-800 bg-zinc-900 p-4">
+              <div key={game.id} className="rounded-2xl border border-white/[.06] bg-surface p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm font-bold text-zinc-500">Game {game.game_number}</span>
+                  <span className="text-sm font-bold text-slate-400">Game {game.game_number}</span>
                   <div className="flex items-center gap-3">
                     <span className={`text-2xl font-black ${winnerColor}`}>
                       {game.team1_score} – {game.team2_score}
                     </span>
                     <button
                       onClick={() => setConfirmDelete(game)}
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-600 transition-colors hover:bg-red-950/50 hover:text-red-400"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-[#555570] transition-colors hover:bg-red-950/50 hover:text-red-400"
                       aria-label={`Delete game ${game.game_number}`}
                     >
                       <TrashIcon />
@@ -243,7 +243,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
                     </div>
                   </div>
                   <div>
-                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wider text-orange-400">
+                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wider text-[#fb923c]">
                       Team 2 {game.winning_team === 2 && '🏆'}
                     </p>
                     <div className="flex flex-wrap gap-1">
@@ -251,7 +251,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
                         <Link
                           key={gp.id}
                           href={`/players/${gp.player_id}`}
-                          className="rounded-full bg-orange-900/50 px-2.5 py-0.5 text-xs text-orange-200 hover:bg-orange-800/60"
+                          className="rounded-full bg-orange-900/50 px-2.5 py-0.5 text-xs text-[#fb923c] hover:bg-orange-800/60"
                         >
                           {displayName(gp.players)}
                         </Link>
@@ -264,7 +264,7 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           })}
 
           {games.length === 0 && (
-            <p className="py-10 text-center text-zinc-500">No games logged for this session.</p>
+            <p className="py-10 text-center text-slate-400">No games logged for this session.</p>
           )}
         </div>
       </div>
@@ -272,18 +272,18 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
       {/* Delete confirmation modal */}
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center">
-          <div className="w-full max-w-sm rounded-2xl bg-zinc-900 p-6 shadow-xl">
+          <div className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-xl">
             <h2 className="mb-2 text-lg font-bold text-white">
               Delete Game {confirmDelete.game_number}?
             </h2>
-            <p className="mb-6 text-sm text-zinc-400">
+            <p className="mb-6 text-sm text-slate-400">
               This will remove all player records for this game and cannot be undone.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmDelete(null)}
                 disabled={deleting}
-                className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                className="flex-1 rounded-xl border border-white/[.06] py-3 font-semibold text-slate-300 hover:bg-surface-raised disabled:opacity-50"
               >
                 Cancel
               </button>
