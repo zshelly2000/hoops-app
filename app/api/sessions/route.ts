@@ -45,12 +45,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json() as { session_date: string; notes?: string }
+  const body = await request.json() as { session_date: string; location?: string; notes?: string }
 
   const { data, error } = await supabaseAdmin
     .from('sessions')
     .insert({
       session_date: body.session_date,
+      location: body.location ?? 'Natomas',
       notes: body.notes ?? null,
     })
     .select()

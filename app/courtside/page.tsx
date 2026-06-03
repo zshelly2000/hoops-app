@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ThreeColumnAssigner } from '@/components/courtside/ThreeColumnAssigner'
 import { ScoreEntry } from '@/components/courtside/ScoreEntry'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
+import { LocationPill, InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
 import { Toast } from '@/components/shared/Toast'
 import type { Player, Session, TeamSlot } from '@/lib/types'
 
@@ -39,9 +40,16 @@ export default function CourtsidePage() {
   const [startingSession, setStartingSession] = useState(false)
   const [keepWinnersSheet, setKeepWinnersSheet] = useState<KeepWinnersSheet | null>(null)
   const [showEndSession, setShowEndSession] = useState(false)
+  const [location, setLocation] = useState('Natomas')
+  const [showLocationChange, setShowLocationChange] = useState(false)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
+  }, [])
+
+  // Init location from localStorage on mount
+  useEffect(() => {
+    setLocation(getDefaultLocation())
   }, [])
 
   // Load players and today's session on mount
@@ -75,6 +83,8 @@ export default function CourtsidePage() {
           const todaySession = sessions.find((s) => s.session_date === today && !s.is_complete)
           if (todaySession) {
             setSession(todaySession)
+            // Sync location from existing session (may differ from localStorage default)
+            if (todaySession.location) setLocation(todaySession.location)
             const gamesRes = await fetch(`/api/sessions/${todaySession.id}/games`, { cache: 'no-store' })
             if (gamesRes.ok) {
               const games = await gamesRes.json() as { length: number }
@@ -106,10 +116,11 @@ export default function CourtsidePage() {
     try {
       // Use local date (en-CA gives YYYY-MM-DD) to avoid UTC day boundary mismatch
       const today = new Date().toLocaleDateString('en-CA')
+      const currentLocation = getDefaultLocation()
       const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_date: today }),
+        body: JSON.stringify({ session_date: today, location: currentLocation }),
       })
       if (!res.ok) throw new Error('Failed to start session')
       const sess = await res.json() as Session
@@ -214,6 +225,7 @@ export default function CourtsidePage() {
 
     // Step 2: reset UI state and show toast immediately.
     setShowEndSession(false)
+    setShowLocationChange(false)
     showToast('Rundown generating... 📰')
     setSession(null)
     setGameCount(0)
@@ -262,15 +274,25 @@ export default function CourtsidePage() {
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-black text-white">Courtside</h1>
-            {session && (
-              <p className="text-sm text-slate-400">
-                {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
-                  weekday: 'short', month: 'short', day: 'numeric',
-                })}
-                {' · '}
-                <span className="text-[#fb923c] font-semibold">Game {gameCount + 1}</span>
-              </p>
-            )}
+            {session ? (
+              <div className="mt-0.5 flex items-center gap-2">
+                <p className="text-sm text-slate-400">
+                  {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
+                    weekday: 'short', month: 'short', day: 'numeric',
+                  })}
+                  {' · '}
+                  <span className="text-[#fb923c] font-semibold">Game {gameCount + 1}</span>
+                </p>
+                <LocationPill
+                  sessionId={session.id}
+                  location={location}
+                  onLocationChange={(loc) => {
+                    setLocation(loc)
+                    saveDefaultLocation(loc)
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
           <button
             onClick={() => setShowAddPlayer(true)}
@@ -378,12 +400,34 @@ export default function CourtsidePage() {
             <div className="mb-1 text-center text-xl font-black text-[#f0f0f8]">
               End today&apos;s run?
             </div>
-            <p className="mb-8 text-center text-sm text-slate-400">
+            <p className="mb-1 text-center text-sm text-slate-400">
               This will generate your Rundown story.
             </p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="mb-6 flex items-center justify-center gap-2">
+              <span className="text-sm text-slate-400">
+                📍 {location}
+              </span>
               <button
-                onClick={() => setShowEndSession(false)}
+                onClick={() => setShowLocationChange((v) => !v)}
+                className="text-xs text-[#fb923c] underline underline-offset-2 hover:text-orange-300 transition-colors"
+              >
+                {showLocationChange ? 'Cancel' : 'Change'}
+              </button>
+            </div>
+            {showLocationChange && (
+              <InlineLocationPicker
+                sessionId={session?.id ?? null}
+                location={location}
+                onLocationChange={(loc) => {
+                  setLocation(loc)
+                  saveDefaultLocation(loc)
+                }}
+                onClose={() => setShowLocationChange(false)}
+              />
+            )}
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <button
+                onClick={() => { setShowEndSession(false); setShowLocationChange(false) }}
                 className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#f0f0f8] transition-all hover:bg-surface-raised active:scale-95"
               >
                 Cancel
