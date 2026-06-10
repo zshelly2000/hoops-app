@@ -13,6 +13,11 @@ const links = [
 export function Nav() {
   const pathname = usePathname()
 
+  // Courtside screens own the full viewport with their own pinned bottom bar.
+  // The global nav would overlay their CTAs and appear broken (orange bleed-through).
+  // The start screen renders <Nav /> directly so the user is never stranded.
+  if (pathname.startsWith('/courtside')) return null
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-safe">
       <div className="glass-nav mx-auto mb-3 max-w-lg overflow-hidden">

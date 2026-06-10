@@ -7,6 +7,7 @@ import { PaintMode } from '@/components/courtside/PaintMode'
 import { ScoreKeypad } from '@/components/courtside/ScoreKeypad'
 import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
+import { Nav } from '@/components/shared/Nav'
 import { LocationPill, InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
 import { useRetryQueue } from '@/hooks/useRetryQueue'
@@ -707,7 +708,7 @@ export default function CourtsidePage() {
     <>
       {/* ── Start screen ── */}
       {screen === 'start' && (
-        <main className="flex h-[100dvh] flex-col items-center justify-center bg-[#08080e] px-6">
+        <main className="flex h-[100dvh] flex-col items-center justify-center bg-[#08080e] px-6 pb-24">
           <div className="w-full max-w-sm text-center">
             <div className="mb-4 text-5xl">🏀</div>
             <h1 className="mb-2 text-2xl font-black text-[#f0f0f8]">Courtside</h1>
@@ -720,6 +721,9 @@ export default function CourtsidePage() {
               {startingSession ? 'Starting…' : "Start Today's Run"}
             </button>
           </div>
+          {/* Nav is suppressed globally on /courtside; render it here so the start
+              screen is not a navigational dead end before a session exists. */}
+          <Nav />
         </main>
       )}
 
@@ -818,7 +822,7 @@ export default function CourtsidePage() {
 
       {/* ── Squad overlay (mid-session check-in) ── */}
       {squadOverlayOpen && session && (
-        <div className="fixed inset-0 z-40">
+        <div className="fixed inset-0 z-50">
           <CheckIn
             allPlayers={allPlayers}
             lastPlayed={lastPlayed}

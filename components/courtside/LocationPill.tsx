@@ -152,7 +152,7 @@ export function LocationPill({ sessionId, location, onLocationChange }: Props) {
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1.5 min-w-[220px] rounded-xl border border-white/[.08] bg-[#1a1a2e] shadow-2xl">
+        <div className="absolute right-0 top-full z-50 mt-1.5 min-w-[220px] rounded-xl border border-white/[.08] bg-[#1a1a2e] shadow-2xl">
           <div className="p-1">
             {KNOWN_LOCATIONS.map((loc) => (
               <button

@@ -123,7 +123,7 @@ export function CheckIn({
   }
 
   const containerClass = isOverlay
-    ? 'fixed inset-0 z-50 flex flex-col bg-[#08080e] max-w-[430px] mx-auto'
+    ? 'h-full flex flex-col bg-[#08080e] max-w-[430px] mx-auto'
     : 'flex flex-col h-[100dvh] max-w-[430px] mx-auto'
 
   return (
@@ -171,20 +171,24 @@ export function CheckIn({
 
       {/* Search + new player */}
       <div className="flex-none flex gap-2 px-3.5 pt-2 pb-1">
-        <input
-          type="text"
-          placeholder={inactiveMode ? 'Search inactive…' : 'Search players…'}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 rounded-xl border border-white/[.06] bg-[#1a1a28] py-2 pl-3 pr-8 text-sm text-[#f0f0f8] placeholder-[#555570] focus:border-[#fb923c] focus:outline-none"
-        />
-        {search ? (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-16 text-[#555570]"
-            aria-label="Clear"
+        <div className="relative flex-1">
+          <input
+            type="text"
+            placeholder={inactiveMode ? 'Search inactive…' : 'Search players…'}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-white/[.06] bg-[#1a1a28] py-2 pl-3 pr-8 text-sm text-[#f0f0f8] placeholder-[#555570] focus:border-[#fb923c] focus:outline-none"
           />
-        ) : null}
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555570] hover:text-[#94a3b8] text-xs leading-none"
+              aria-label="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         {!inactiveMode && (
           <button
             onClick={onNewPlayer}
