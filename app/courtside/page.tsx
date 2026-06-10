@@ -1,58 +1,123 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ThreeColumnAssigner } from '@/components/courtside/ThreeColumnAssigner'
-import { ScoreEntry } from '@/components/courtside/ScoreEntry'
+import { CheckIn } from '@/components/courtside/CheckIn'
+import { PaintMode } from '@/components/courtside/PaintMode'
+import { ScoreKeypad } from '@/components/courtside/ScoreKeypad'
+import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
 import { LocationPill, InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
-import { Toast } from '@/components/shared/Toast'
+import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
+import { useRetryQueue } from '@/hooks/useRetryQueue'
+import type { QueueItem } from '@/hooks/useRetryQueue'
 import type { Player, Session, TeamSlot } from '@/lib/types'
 
-// Initial load sort: most recently played first, then alpha
-function sortPlayers(players: Player[], lastPlayed: Record<string, string>): Player[] {
-  return [...players].sort((a, b) => {
-    const la = lastPlayed[a.id]
-    const lb = lastPlayed[b.id]
-    if (la && lb) return lb.localeCompare(la)
-    if (la) return -1
-    if (lb) return 1
-    return (a.nickname ?? a.name).localeCompare(b.nickname ?? b.name)
-  })
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type Screen = 'start' | 'checkin' | 'paint' | 'score' | 'postgame'
+
+interface UndoTarget {
+  gameId: string | null  // null = still pending in queue
+  localId: string
+  gameNumber: number
+  team1Players: string[]
+  team2Players: string[]
+  t1Score: number
+  t2Score: number
+  wasGame1: boolean
+  sessionId: string
 }
 
-type ToastState = { message: string; type: 'success' | 'error'; key: number }
-type KeepWinnersSheet = { winnerIds: string[]; gameNumber: number }
+interface StashedSquad {
+  squad: string[]
+  squadOrder: string[]
+  assignments: [string, TeamSlot][]
+  t1Score: string
+  t2Score: string
+}
+
+// ─── localStorage helpers ─────────────────────────────────────────────────────
+
+const STASH_KEY = 'hoops_stashed_squad'
+const squadKey = (id: string) => `hoops_squad_${id}`
+const draftKey = (id: string) => `hoops_draft_${id}`
+
+function loadJSON<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') as T } catch { return null }
+}
+
+function saveJSON(key: string, val: unknown) {
+  localStorage.setItem(key, JSON.stringify(val))
+}
+
+// ─── Sort helpers ─────────────────────────────────────────────────────────────
+
+function sortPlayers(players: Player[], lastPlayed: Record<string, string>): Player[] {
+  const sn = (p: Player) => p.nickname ?? p.name.split(' ')[0]
+  const played = players.filter((p) => lastPlayed[p.id]).sort((a, b) =>
+    lastPlayed[b.id].localeCompare(lastPlayed[a.id]),
+  )
+  const never = players
+    .filter((p) => !lastPlayed[p.id])
+    .sort((a, b) => sn(a).localeCompare(sn(b)))
+  return [...played, ...never]
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CourtsidePage() {
   const router = useRouter()
-  const [players, setPlayers] = useState<Player[]>([])
+
+  // Navigation
+  const [screen, setScreen] = useState<Screen>('start')
+  const [squadOverlayOpen, setSquadOverlayOpen] = useState(false)
+
+  // Data
+  const [allPlayers, setAllPlayers] = useState<Player[]>([])
   const [lastPlayed, setLastPlayed] = useState<Record<string, string>>({})
   const [session, setSession] = useState<Session | null>(null)
-  const [gameCount, setGameCount] = useState(0)
-  const [selections, setSelections] = useState<Map<string, TeamSlot>>(new Map())
-  const [team1Score, setTeam1Score] = useState('')
-  const [team2Score, setTeam2Score] = useState('')
+  const [savedGames, setSavedGames] = useState<SavedGameEntry[]>([])
+  const [location, setLocation] = useState('Natomas')
   const [loading, setLoading] = useState(true)
+
+  // Squad — stable ordered array for paint grid; set for quick membership checks
+  const [squadIds, setSquadIds] = useState<Set<string>>(new Set())
+  const [squadOrder, setSquadOrder] = useState<string[]>([])
+
+  // Game draft
+  const [activeBrush, setActiveBrush] = useState<TeamSlot>(1)
+  const [assignments, setAssignments] = useState<Map<string, TeamSlot>>(new Map())
+  const [t1Score, setT1Score] = useState('')
+  const [t2Score, setT2Score] = useState('')
+
+  // Post-game
+  const [lastGameInfo, setLastGameInfo] = useState<{ number: number; winnerTeam: 1 | 2 | null } | null>(null)
+
+  // Undo
+  const [undoTarget, setUndoTarget] = useState<UndoTarget | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // UI
   const [submitting, setSubmitting] = useState(false)
   const [showAddPlayer, setShowAddPlayer] = useState(false)
-  const [toast, setToast] = useState<ToastState | null>(null)
-  const [startingSession, setStartingSession] = useState(false)
-  const [keepWinnersSheet, setKeepWinnersSheet] = useState<KeepWinnersSheet | null>(null)
+  const [pendingBanner, setPendingBanner] = useState(false)
   const [showEndSession, setShowEndSession] = useState(false)
-  const [location, setLocation] = useState('Natomas')
   const [showLocationChange, setShowLocationChange] = useState(false)
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; key: number } | null>(null)
+  const [gameCount, setGameCount] = useState(0)
 
-  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type, key: Date.now() })
-  }, [])
+  // Retry queue
+  const { queue, enqueue, dequeueFirst, removeGame, removeReactivate } = useRetryQueue()
+  const processingRef = useRef(false)
 
-  // Init location from localStorage on mount
+  // ─── Init ────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     setLocation(getDefaultLocation())
   }, [])
 
-  // Load players and today's session on mount
   useEffect(() => {
     async function init() {
       setLoading(true)
@@ -63,32 +128,49 @@ export default function CourtsidePage() {
         ])
 
         const playersData = await playersRes.json() as Player[]
-        const active = playersData.filter((p) => p.is_active)
+        setAllPlayers(playersData)
 
         let lp: Record<string, string> = {}
         if (statsRes.ok) {
           const stats = await statsRes.json() as { player_id: string; last_played: string | null }[]
           stats.forEach((s) => { if (s.last_played) lp[s.player_id] = s.last_played })
         }
-
         setLastPlayed(lp)
-        setPlayers(sortPlayers(active, lp))
 
-        // Use local date (en-CA gives YYYY-MM-DD) to avoid UTC day boundary mismatch
         const today = new Date().toLocaleDateString('en-CA')
         const sessRes = await fetch(`/api/sessions?date=${today}`, { cache: 'no-store' })
         if (sessRes.ok) {
           const sessions = await sessRes.json() as Session[]
-          // Only resume sessions that haven't been ended yet
           const todaySession = sessions.find((s) => s.session_date === today && !s.is_complete)
           if (todaySession) {
             setSession(todaySession)
-            // Sync location from existing session (may differ from localStorage default)
             if (todaySession.location) setLocation(todaySession.location)
+
             const gamesRes = await fetch(`/api/sessions/${todaySession.id}/games`, { cache: 'no-store' })
             if (gamesRes.ok) {
-              const games = await gamesRes.json() as { length: number }
+              const games = await gamesRes.json() as SavedGameEntry[]
+              setSavedGames(games)
               setGameCount(games.length)
+            }
+
+            // Restore squad
+            const savedSquad = loadJSON<string[]>(squadKey(todaySession.id))
+            if (savedSquad) {
+              setSquadIds(new Set(savedSquad))
+              setSquadOrder(savedSquad)
+            }
+
+            // Restore draft
+            const draft = loadJSON<{ assignments: [string, TeamSlot][]; t1: string; t2: string; screen: Screen }>(draftKey(todaySession.id))
+            if (draft) {
+              setAssignments(new Map(draft.assignments))
+              setT1Score(draft.t1)
+              setT2Score(draft.t2)
+              const validScreen = draft.screen === 'paint' || draft.screen === 'score' ? draft.screen : 'checkin'
+              const hasSquad = savedSquad && savedSquad.length >= 2
+              setScreen(hasSquad ? validScreen : 'checkin')
+            } else {
+              setScreen(savedSquad && savedSquad.length >= 2 ? 'paint' : 'checkin')
             }
           }
         }
@@ -99,22 +181,206 @@ export default function CourtsidePage() {
     void init()
   }, [])
 
-  function handleAssign(playerId: string, target: TeamSlot | null) {
-    setSelections((prev) => {
-      const next = new Map(prev)
-      if (target === null) {
-        next.delete(playerId)
-      } else {
-        next.set(playerId, target)
+  // ─── Draft persistence ────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!session) return
+    if (squadOrder.length > 0) {
+      saveJSON(squadKey(session.id), squadOrder)
+    }
+  }, [session, squadOrder])
+
+  useEffect(() => {
+    if (!session) return
+    if (screen === 'paint' || screen === 'score') {
+      saveJSON(draftKey(session.id), {
+        assignments: Array.from(assignments.entries()),
+        t1: t1Score,
+        t2: t2Score,
+        screen,
+      })
+    }
+  }, [session, assignments, t1Score, t2Score, screen])
+
+  // ─── Retry queue processing ───────────────────────────────────────────────────
+
+  const processQueue = useCallback(async () => {
+    if (processingRef.current || queue.length === 0) return
+    processingRef.current = true
+    const item = queue[0]
+    try {
+      if (item.type === 'game') {
+        const res = await fetch('/api/games', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: item.sessionId,
+            team1_score: item.team1_score,
+            team2_score: item.team2_score,
+            team1_players: item.team1_players,
+            team2_players: item.team2_players,
+          }),
+        })
+        if (!res.ok) throw new Error('game post failed')
+        const game = await res.json() as SavedGameEntry
+        // Replace the local entry with the real one
+        setSavedGames((prev) =>
+          prev.map((g) => g.id === item.localId ? { ...game } : g),
+        )
+        // Update any undo target that was pointing at the local id
+        setUndoTarget((prev) =>
+          prev?.localId === item.localId ? { ...prev, gameId: game.id } : prev,
+        )
+        dequeueFirst()
+      } else if (item.type === 'reactivate') {
+        const res = await fetch(`/api/players/${item.playerId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: true }),
+        })
+        if (!res.ok) throw new Error('reactivate failed')
+        setAllPlayers((prev) =>
+          prev.map((p) => p.id === item.playerId ? { ...p, is_active: true } : p),
+        )
+        dequeueFirst()
       }
-      return next
-    })
+    } catch {
+      // Leave at front of queue — retry on next trigger
+    } finally {
+      processingRef.current = false
+    }
+  }, [queue, dequeueFirst])
+
+  // Trigger on queue changes, online, and visibility
+  useEffect(() => {
+    void processQueue()
+  }, [processQueue])
+
+  useEffect(() => {
+    function onOnline() { void processQueue() }
+    function onVisibility() { if (document.visibilityState === 'visible') void processQueue() }
+    window.addEventListener('online', onOnline)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [processQueue])
+
+  // Pending banner
+  useEffect(() => {
+    setPendingBanner(queue.some((i) => i.type === 'game'))
+  }, [queue])
+
+  // ─── Toast ────────────────────────────────────────────────────────────────────
+
+  function showToast(msg: string, type: 'success' | 'error' = 'success') {
+    setToast({ msg, type, key: Date.now() })
   }
+
+  // ─── Undo ─────────────────────────────────────────────────────────────────────
+
+  function startUndoTimer(target: UndoTarget) {
+    setUndoTarget(target)
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    undoTimerRef.current = setTimeout(() => {
+      setUndoTarget(null)
+    }, 8000)
+  }
+
+  async function handleUndo() {
+    if (!undoTarget) return
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoTarget(null)
+
+    const { gameId, localId, wasGame1, sessionId, team1Players, team2Players, t1Score: prevT1, t2Score: prevT2, gameNumber } = undoTarget
+
+    if (gameId === null) {
+      // Game is still in the retry queue — remove it, no DELETE needed
+      removeGame(localId)
+      // Restore draft
+      setAssignments(buildAssignmentsFromSavedTeams(team1Players, team2Players))
+      setT1Score(String(prevT1))
+      setT2Score(String(prevT2))
+      setGameCount((c) => c - 1)
+      setSavedGames((prev) => prev.filter((g) => g.id !== localId))
+      setScreen('paint')
+      showToast('Undone — game removed from queue')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/games/${gameId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        showToast('Undo failed', 'error')
+        return
+      }
+      const body = await res.json() as { prev_session_id?: string }
+
+      setSavedGames((prev) => prev.filter((g) => g.id !== gameId))
+      setGameCount((c) => c - 1)
+
+      if (wasGame1) {
+        // Session was auto-deleted. Stash squad + teams so the next session can restore them.
+        const stash: StashedSquad = {
+          squad: Array.from(squadIds),
+          squadOrder,
+          assignments: team1Players.map((id): [string, TeamSlot] => [id, 1]).concat(team2Players.map((id): [string, TeamSlot] => [id, 2])),
+          t1Score: String(prevT1),
+          t2Score: String(prevT2),
+        }
+        saveJSON(STASH_KEY, stash)
+        // Clear session-scoped localStorage
+        if (session) {
+          localStorage.removeItem(squadKey(session.id))
+          localStorage.removeItem(draftKey(session.id))
+        }
+        setSession(null)
+        setSquadIds(new Set())
+        setSquadOrder([])
+        setAssignments(new Map())
+        setT1Score('')
+        setT2Score('')
+        setSavedGames([])
+        setGameCount(0)
+        setScreen('start')
+        showToast('Game 1 undone. Session reset — squad kept.')
+
+        // If the deleted session was complete and we got a prev_session_id, regen narrative
+        if (body.prev_session_id) {
+          fetch('/api/narratives/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: body.prev_session_id }),
+          }).catch(() => {})
+        }
+      } else {
+        // Normal undo: restore teams and go back to paint
+        setAssignments(buildAssignmentsFromSavedTeams(team1Players, team2Players))
+        setT1Score(String(prevT1))
+        setT2Score(String(prevT2))
+        setScreen('paint')
+        showToast(`Game ${gameNumber} undone`)
+      }
+    } catch {
+      showToast('Undo failed', 'error')
+    }
+  }
+
+  function buildAssignmentsFromSavedTeams(t1: string[], t2: string[]): Map<string, TeamSlot> {
+    const map = new Map<string, TeamSlot>()
+    t1.forEach((id) => map.set(id, 1))
+    t2.forEach((id) => map.set(id, 2))
+    return map
+  }
+
+  // ─── Session management ───────────────────────────────────────────────────────
+
+  const [startingSession, setStartingSession] = useState(false)
 
   async function startSession() {
     setStartingSession(true)
     try {
-      // Use local date (en-CA gives YYYY-MM-DD) to avoid UTC day boundary mismatch
       const today = new Date().toLocaleDateString('en-CA')
       const currentLocation = getDefaultLocation()
       const res = await fetch('/api/sessions', {
@@ -125,7 +391,36 @@ export default function CourtsidePage() {
       if (!res.ok) throw new Error('Failed to start session')
       const sess = await res.json() as Session
       setSession(sess)
+      setLocation(sess.location ?? currentLocation)
       setGameCount(0)
+      setSavedGames([])
+      setAssignments(new Map())
+      setT1Score('')
+      setT2Score('')
+
+      // Check for stashed squad from a game-1 undo
+      const stash = loadJSON<StashedSquad>(STASH_KEY)
+      if (stash) {
+        localStorage.removeItem(STASH_KEY)
+        const ids = new Set(stash.squad)
+        setSquadIds(ids)
+        setSquadOrder(stash.squadOrder)
+        setAssignments(new Map(stash.assignments))
+        setT1Score(stash.t1Score)
+        setT2Score(stash.t2Score)
+        saveJSON(squadKey(sess.id), stash.squadOrder)
+        setScreen('paint')
+        showToast('Squad kept from last session')
+      } else {
+        // Fresh start: build squad from sorted active players (use all active as starting suggestion)
+        const active = allPlayers.filter((p) => p.is_active)
+        const sorted = sortPlayers(active, lastPlayed)
+        const order = sorted.map((p) => p.id)
+        setSquadIds(new Set())
+        setSquadOrder(order)
+        setScreen('checkin')
+      }
+
       router.refresh()
     } catch {
       showToast('Failed to start session', 'error')
@@ -134,87 +429,209 @@ export default function CourtsidePage() {
     }
   }
 
+  // ─── Squad management ─────────────────────────────────────────────────────────
+
+  function toggleSquad(playerId: string) {
+    setSquadIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(playerId)) {
+        next.delete(playerId)
+        setSquadOrder((o) => o.filter((id) => id !== playerId))
+      } else {
+        next.add(playerId)
+        setSquadOrder((o) => {
+          // Only add if not already in order
+          if (o.includes(playerId)) return o
+          return [...o, playerId]
+        })
+      }
+      return next
+    })
+  }
+
+  function handleReactivate(player: Player) {
+    // Optimistically add to squad
+    const alreadyInSquad = squadIds.has(player.id)
+    if (!alreadyInSquad) {
+      setSquadIds((prev) => new Set(Array.from(prev).concat(player.id)))
+      setSquadOrder((o) => (o.includes(player.id) ? o : [...o, player.id]))
+    }
+    // Update allPlayers optimistically
+    setAllPlayers((prev) =>
+      prev.map((p) => p.id === player.id ? { ...p, is_active: true } : p),
+    )
+    showToast(`${player.nickname ?? player.name} reactivated & checked in ✓`)
+
+    // Queue the PATCH
+    const item: QueueItem = {
+      type: 'reactivate',
+      playerId: player.id,
+      playerName: player.nickname ?? player.name,
+    }
+    // Remove any existing reactivate for this player before adding
+    removeReactivate(player.id)
+    enqueue(item)
+  }
+
+  function handlePlayerAdded(player: Player) {
+    setShowAddPlayer(false)
+    const alreadyExists = allPlayers.some((p) => p.id === player.id)
+
+    if (alreadyExists) {
+      // Match was tapped — this is an existing player (active or reactivated)
+      const existing = allPlayers.find((p) => p.id === player.id)
+      if (existing && !existing.is_active) {
+        handleReactivate(existing)
+      } else {
+        // Already active — just check in
+        if (!squadIds.has(player.id)) toggleSquad(player.id)
+        showToast(`${player.nickname ?? player.name} checked in ✓`)
+      }
+    } else {
+      // Newly created player
+      setAllPlayers((prev) => sortPlayers([...prev, player], lastPlayed))
+      setSquadIds((prev) => new Set(Array.from(prev).concat(player.id)))
+      setSquadOrder((o) => [...o, player.id])
+      showToast(`${player.nickname ?? player.name} added & checked in ✓`)
+    }
+  }
+
+  // ─── Game assignment ──────────────────────────────────────────────────────────
+
+  function handleAssign(playerId: string, team: TeamSlot | null) {
+    setAssignments((prev) => {
+      const next = new Map(prev)
+      if (team === null) next.delete(playerId)
+      else next.set(playerId, team)
+      return next
+    })
+  }
+
+  // ─── Submit game ──────────────────────────────────────────────────────────────
+
   async function submitGame() {
     if (!session) return
     setSubmitting(true)
 
-    // Capture before reset
-    const team1PlayerIds = players
-      .filter((p) => selections.get(p.id) === 1)
-      .map((p) => p.id)
-    const team2PlayerIds = players
-      .filter((p) => selections.get(p.id) === 2)
-      .map((p) => p.id)
-    const t1Score = parseInt(team1Score)
-    const t2Score = parseInt(team2Score)
-    const isTie = t1Score === t2Score
-    const winnerIds = t1Score > t2Score ? team1PlayerIds : team2PlayerIds
-
+    const team1PlayerIds = squadOrder.filter((id) => assignments.get(id) === 1)
+    const team2PlayerIds = squadOrder.filter((id) => assignments.get(id) === 2)
+    const t1Num = parseInt(t1Score, 10)
+    const t2Num = parseInt(t2Score, 10)
+    const isTie = t1Num === t2Num
+    const winnerTeam: 1 | 2 | null = isTie ? null : t1Num > t2Num ? 1 : 2
     const newCount = gameCount + 1
+    const localId = `local-${Date.now()}`
 
-    // Optimistic reset — always clear the form immediately
+    // Optimistic update
+    const optimisticEntry: SavedGameEntry = {
+      id: localId,
+      game_number: newCount,
+      team1_score: t1Num,
+      team2_score: t2Num,
+    }
+    setSavedGames((prev) => [...prev, optimisticEntry])
     setGameCount(newCount)
-    setSelections(new Map())
-    setTeam1Score('')
-    setTeam2Score('')
 
+    // Clear draft for next game
+    setAssignments(new Map())
+    setT1Score('')
+    setT2Score('')
+
+    setLastGameInfo({ number: newCount, winnerTeam })
+    setScreen('postgame')
+
+    // Start undo timer — initially points at localId (no server id yet)
+    startUndoTimer({
+      gameId: null,
+      localId,
+      gameNumber: newCount,
+      team1Players: team1PlayerIds,
+      team2Players: team2PlayerIds,
+      t1Score: t1Num,
+      t2Score: t2Num,
+      wasGame1: newCount === 1,
+      sessionId: session.id,
+    })
+
+    // Try to POST
     try {
       const res = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: session.id,
-          team1_score: t1Score,
-          team2_score: t2Score,
+          team1_score: t1Num,
+          team2_score: t2Num,
           team1_players: team1PlayerIds,
           team2_players: team2PlayerIds,
         }),
       })
-
-      if (!res.ok) {
-        const data = await res.json() as { error: string }
-        throw new Error(data.error)
-      }
-
-      // Bust router cache so sessions/dashboard pages reflect this game immediately
+      if (!res.ok) throw new Error('save failed')
+      const game = await res.json() as SavedGameEntry
+      // Replace optimistic entry
+      setSavedGames((prev) => prev.map((g) => g.id === localId ? game : g))
+      // Update undo target with real id
+      setUndoTarget((prev) =>
+        prev?.localId === localId ? { ...prev, gameId: game.id } : prev,
+      )
       router.refresh()
-
-      if (isTie) {
-        showToast(`Game ${newCount} saved!`)
-      } else {
-        setKeepWinnersSheet({ winnerIds, gameNumber: newCount })
-      }
-    } catch (err) {
-      setGameCount(newCount - 1)
-      showToast(err instanceof Error ? err.message : 'Failed to save game', 'error')
+    } catch {
+      // Go offline — put in retry queue
+      enqueue({
+        type: 'game',
+        localId,
+        sessionId: session.id,
+        team1_score: t1Num,
+        team2_score: t2Num,
+        team1_players: team1PlayerIds,
+        team2_players: team2PlayerIds,
+        localGameNumber: newCount,
+      })
     } finally {
       setSubmitting(false)
     }
   }
 
-  function handleKeepWinners() {
-    if (!keepWinnersSheet) return
-    const next = new Map<string, TeamSlot>()
-    for (const id of keepWinnersSheet.winnerIds) {
-      next.set(id, 1)
+  // ─── Post-game navigation ─────────────────────────────────────────────────────
+
+  function handleRunback() {
+    if (!lastGameInfo) return
+    // Re-apply the same assignments that were just saved
+    // (they were cleared — need to restore from undo target if available)
+    if (undoTarget) {
+      setAssignments(buildAssignmentsFromSavedTeams(undoTarget.team1Players, undoTarget.team2Players))
     }
-    setSelections(next)
-    showToast(`Game ${keepWinnersSheet.gameNumber} saved! Winners on Team 1.`)
-    setKeepWinnersSheet(null)
+    setScreen('paint')
+    setActiveBrush(1)
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoTarget(null)
   }
 
-  function handleNewGame() {
-    if (!keepWinnersSheet) return
-    showToast(`Game ${keepWinnersSheet.gameNumber} saved!`)
-    setKeepWinnersSheet(null)
+  function handleWinnersStay() {
+    if (!lastGameInfo || !undoTarget) return
+    const winnerIds = lastGameInfo.winnerTeam === 1 ? undoTarget.team1Players : undoTarget.team2Players
+    const next = new Map<string, TeamSlot>()
+    winnerIds.forEach((id) => next.set(id, 1))
+    setAssignments(next)
+    setActiveBrush(2)
+    setScreen('paint')
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoTarget(null)
   }
+
+  function handleFresh() {
+    setAssignments(new Map())
+    setActiveBrush(1)
+    setScreen('paint')
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setUndoTarget(null)
+  }
+
+  // ─── End session ──────────────────────────────────────────────────────────────
 
   async function handleEndSession() {
     if (!session) return
     const sessionId = session.id
-
-    // Step 1: confirm the session is marked complete before doing anything else.
-    // /complete is fast (single Supabase update) so the user waits < 1 s.
     try {
       const res = await fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' })
       if (!res.ok) throw new Error('Failed to end session')
@@ -223,20 +640,21 @@ export default function CourtsidePage() {
       return
     }
 
-    // Step 2: reset UI state and show toast immediately.
     setShowEndSession(false)
     setShowLocationChange(false)
-    showToast('Rundown generating... 📰')
+    showToast('Rundown generating… 📰')
     setSession(null)
     setGameCount(0)
-    setSelections(new Map())
-    setTeam1Score('')
-    setTeam2Score('')
+    setAssignments(new Map())
+    setT1Score('')
+    setT2Score('')
+    setSavedGames([])
+    setSquadIds(new Set())
+    setSquadOrder([])
+    setScreen('start')
+    localStorage.removeItem(squadKey(sessionId))
+    localStorage.removeItem(draftKey(sessionId))
 
-    // Step 3: call generate directly from the browser — the same approach the
-    // Regenerate button uses. The browser owns the connection and keeps it alive
-    // for the full duration; no server-to-server hop, no GC risk. We don't
-    // await it because the user has already seen the confirmation toast.
     fetch('/api/narratives/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -244,169 +662,209 @@ export default function CourtsidePage() {
     }).catch(() => {})
   }
 
-  function handlePlayerAdded(player: Player) {
-    setShowAddPlayer(false)
-    setPlayers((prev) => sortPlayers([...prev, player], lastPlayed))
-    showToast(`${player.nickname ?? player.name} added!`)
+  // ─── Location change ──────────────────────────────────────────────────────────
+
+  function handleLocationChange(loc: string) {
+    setLocation(loc)
+    saveDefaultLocation(loc)
   }
 
-  const team1Players = players.filter((p) => selections.get(p.id) === 1)
-  const team2Players = players.filter((p) => selections.get(p.id) === 2)
-  const canSubmit =
-    team1Players.length >= 2 &&
-    team2Players.length >= 2 &&
-    team1Score !== '' &&
-    team2Score !== '' &&
-    !submitting
+  // ─── Squad overlay ────────────────────────────────────────────────────────────
+
+  function openSquadOverlay() { setSquadOverlayOpen(true) }
+  function closeSquadOverlay() { setSquadOverlayOpen(false) }
+
+  // ─── Derived squad players ────────────────────────────────────────────────────
+
+  const playerMap = new Map(allPlayers.map((p) => [p.id, p]))
+  const squadPlayers = squadOrder
+    .filter((id) => squadIds.has(id) && playerMap.has(id))
+    .map((id) => playerMap.get(id)!)
+
+  const team1Players = squadPlayers.filter((p) => assignments.get(p.id) === 1)
+  const team2Players = squadPlayers.filter((p) => assignments.get(p.id) === 2)
+
+  // ─── Bottom offset for undo toast (above pinned bar) ─────────────────────────
+
+  const undoToastBottom =
+    screen === 'paint' ? 'calc(env(safe-area-inset-bottom) + 170px)' :
+    screen === 'score' ? 'calc(env(safe-area-inset-bottom) + 90px)' :
+    'calc(env(safe-area-inset-bottom) + 24px)'
+
+  // ─── Loading ──────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-canvas">
-        <p className="text-slate-400">Loading…</p>
+      <div className="flex h-[100dvh] items-center justify-center bg-[#08080e]">
+        <p className="text-[#94a3b8]">Loading…</p>
       </div>
     )
   }
 
-  return (
-    <main className="min-h-screen bg-canvas pb-24 pt-4">
-      <div className="mx-auto max-w-lg px-4">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-black text-white">Courtside</h1>
-            {session ? (
-              <div className="mt-0.5 flex items-center gap-2">
-                <p className="text-sm text-slate-400">
-                  {new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
-                    weekday: 'short', month: 'short', day: 'numeric',
-                  })}
-                  {' · '}
-                  <span className="text-[#fb923c] font-semibold">Game {gameCount + 1}</span>
-                </p>
-                <LocationPill
-                  sessionId={session.id}
-                  location={location}
-                  onLocationChange={(loc) => {
-                    setLocation(loc)
-                    saveDefaultLocation(loc)
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
-          <button
-            onClick={() => setShowAddPlayer(true)}
-            className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 hover:border-white/20 hover:text-[#f0f0f8]"
-          >
-            + New Player
-          </button>
-        </div>
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
-        {/* Start session prompt */}
-        {!session ? (
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[.06] bg-surface px-6 py-12 text-center">
-            <div className="text-5xl">🏀</div>
-            <h2 className="text-xl font-bold text-white">No run today yet</h2>
-            <p className="text-sm text-slate-400">Start a session to begin logging games.</p>
+  return (
+    <>
+      {/* ── Start screen ── */}
+      {screen === 'start' && (
+        <main className="flex h-[100dvh] flex-col items-center justify-center bg-[#08080e] px-6">
+          <div className="w-full max-w-sm text-center">
+            <div className="mb-4 text-5xl">🏀</div>
+            <h1 className="mb-2 text-2xl font-black text-[#f0f0f8]">Courtside</h1>
+            <p className="mb-8 text-sm text-[#94a3b8]">Start a session to begin logging games.</p>
             <button
-              onClick={startSession}
+              onClick={() => void startSession()}
               disabled={startingSession}
-              className="rounded-xl bg-orange-400 px-8 py-4 text-lg font-black text-white shadow-lg disabled:opacity-50 hover:bg-orange-300 active:scale-95 transition-all"
+              className="w-full rounded-2xl bg-[#fb923c] px-8 py-5 text-xl font-black text-white shadow-lg disabled:opacity-50 hover:bg-orange-300 active:scale-95 transition-all"
             >
               {startingSession ? 'Starting…' : "Start Today's Run"}
             </button>
           </div>
-        ) : (
-          <div className="flex flex-col gap-5">
-            {/* Three-column player assigner */}
-            <ThreeColumnAssigner
-              players={players}
-              selections={selections}
-              lastPlayed={lastPlayed}
-              onAssign={handleAssign}
-            />
+        </main>
+      )}
 
-            {/* Score */}
-            <ScoreEntry
-              team1Score={team1Score}
-              team2Score={team2Score}
-              onTeam1Change={setTeam1Score}
-              onTeam2Change={setTeam2Score}
-            />
+      {/* ── Check-In (full screen, not overlay) ── */}
+      {screen === 'checkin' && !squadOverlayOpen && session && (
+        <CheckIn
+          allPlayers={allPlayers}
+          lastPlayed={lastPlayed}
+          squad={squadIds}
+          assignments={assignments}
+          onToggle={(id) => {
+            const player = playerMap.get(id)
+            if (!player) return
+            if (!player.is_active && !squadIds.has(id)) {
+              handleReactivate(player)
+            } else {
+              toggleSquad(id)
+            }
+          }}
+          onNewPlayer={() => setShowAddPlayer(true)}
+          onDone={() => {
+            // Finalize squad order (sorted by last-played then alpha)
+            const active = allPlayers.filter((p) => p.is_active && squadIds.has(p.id))
+            const sorted = sortPlayers(active, lastPlayed)
+            const newOrder = sorted.map((p) => p.id)
+            setSquadOrder(newOrder)
+            setScreen('paint')
+          }}
+          isOverlay={false}
+          gameCount={gameCount}
+          location={location}
+          session={session}
+          onLocationChange={handleLocationChange}
+        />
+      )}
 
-            {/* Submit */}
-            <button
-              onClick={submitGame}
-              disabled={!canSubmit}
-              className="w-full rounded-2xl bg-orange-400 py-5 text-xl font-black text-white shadow-lg transition-all hover:bg-orange-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {submitting ? 'Saving…' : 'Submit Game'}
-            </button>
+      {/* ── Paint mode ── */}
+      {screen === 'paint' && session && (
+        <PaintMode
+          squadPlayers={squadPlayers}
+          assignments={assignments}
+          activeBrush={activeBrush}
+          onActiveBrushChange={setActiveBrush}
+          onAssign={handleAssign}
+          onEnterScore={() => setScreen('score')}
+          onSquadChip={openSquadOverlay}
+          onEndSession={() => setShowEndSession(true)}
+          savedGames={savedGames}
+          gameCount={gameCount}
+          location={location}
+          session={session}
+          onLocationChange={handleLocationChange}
+          squadCount={squadIds.size}
+        />
+      )}
 
-            {/* End Session — only shown once at least one game has been logged */}
-            {gameCount > 0 && (
-              <div className="mt-2 flex justify-center">
-                <button
-                  onClick={() => setShowEndSession(true)}
-                  className="rounded-xl border border-white/[.06] px-6 py-3 text-sm font-semibold text-slate-400 transition-all hover:border-white/20 hover:text-[#f0f0f8]"
-                >
-                  End Session 📰
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {/* ── Score entry ── */}
+      {screen === 'score' && session && (
+        <ScoreKeypad
+          team1Players={team1Players}
+          team2Players={team2Players}
+          t1Score={t1Score}
+          t2Score={t2Score}
+          onScoreChange={(t1, t2) => { setT1Score(t1); setT2Score(t2) }}
+          onSave={() => void submitGame()}
+          onBack={() => setScreen('paint')}
+          saving={submitting}
+          savedGames={savedGames}
+          gameCount={gameCount}
+          location={location}
+          session={session}
+          onLocationChange={handleLocationChange}
+          onSquadChip={openSquadOverlay}
+          onEndSession={() => setShowEndSession(true)}
+          squadCount={squadIds.size}
+        />
+      )}
 
+      {/* ── Post-game chips ── */}
+      {screen === 'postgame' && session && lastGameInfo && (
+        <PostGameChips
+          gameNumber={lastGameInfo.number}
+          winnerTeam={lastGameInfo.winnerTeam}
+          onRunback={handleRunback}
+          onWinnersStay={handleWinnersStay}
+          onFresh={handleFresh}
+          onEndSession={() => setShowEndSession(true)}
+          onSquadChip={openSquadOverlay}
+          savedGames={savedGames}
+          location={location}
+          session={session}
+          onLocationChange={handleLocationChange}
+          squadCount={squadIds.size}
+        />
+      )}
+
+      {/* ── Squad overlay (mid-session check-in) ── */}
+      {squadOverlayOpen && session && (
+        <div className="fixed inset-0 z-40">
+          <CheckIn
+            allPlayers={allPlayers}
+            lastPlayed={lastPlayed}
+            squad={squadIds}
+            assignments={assignments}
+            onToggle={(id) => {
+              const player = playerMap.get(id)
+              if (!player) return
+              if (!player.is_active && !squadIds.has(id)) {
+                handleReactivate(player)
+              } else {
+                toggleSquad(id)
+              }
+            }}
+            onNewPlayer={() => setShowAddPlayer(true)}
+            onDone={closeSquadOverlay}
+            isOverlay={true}
+            gameCount={gameCount}
+            location={location}
+            session={session}
+            onLocationChange={handleLocationChange}
+          />
+        </div>
+      )}
+
+      {/* ── Add player modal ── */}
       {showAddPlayer && (
         <AddPlayerModal
           onClose={() => setShowAddPlayer(false)}
           onAdded={handlePlayerAdded}
+          allPlayers={allPlayers}
         />
       )}
 
-      {/* Keep Winners bottom sheet */}
-      {keepWinnersSheet && (
+      {/* ── End session sheet ── */}
+      {showEndSession && session && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
-          <div className="w-full max-w-lg rounded-t-3xl bg-surface px-6 pb-12 pt-6 shadow-2xl">
-            <div className="mb-1 text-center text-2xl font-black text-[#f0f0f8]">
-              Game {keepWinnersSheet.gameNumber} saved! 🏆
-            </div>
-            <p className="mb-8 text-center text-sm text-slate-400">
-              What happens next?
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <button
-                onClick={handleNewGame}
-                className="rounded-2xl border border-white/[.06] py-5 text-lg font-bold text-[#f0f0f8] transition-all hover:bg-surface-raised active:scale-95"
-              >
-                New Game
-              </button>
-              <button
-                onClick={handleKeepWinners}
-                className="rounded-2xl bg-orange-400 py-5 text-lg font-bold text-white transition-all hover:bg-orange-300 active:scale-95"
-              >
-                Keep Winners
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* End Session confirmation bottom sheet */}
-      {showEndSession && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
-          <div className="w-full max-w-lg rounded-t-3xl bg-surface px-6 pb-12 pt-6 shadow-2xl">
+          <div className="w-full max-w-lg rounded-t-3xl bg-[#111118] px-6 pb-12 pt-6 shadow-2xl">
             <div className="mb-1 text-center text-xl font-black text-[#f0f0f8]">
               End today&apos;s run?
             </div>
-            <p className="mb-1 text-center text-sm text-slate-400">
+            <p className="mb-1 text-center text-sm text-[#94a3b8]">
               This will generate your Rundown story.
             </p>
-            <div className="mb-6 flex items-center justify-center gap-2">
-              <span className="text-sm text-slate-400">
-                📍 {location}
-              </span>
+            <div className="mb-4 flex items-center justify-center gap-2">
+              <span className="text-sm text-[#94a3b8]">📍 {location}</span>
               <button
                 onClick={() => setShowLocationChange((v) => !v)}
                 className="text-xs text-[#fb923c] underline underline-offset-2 hover:text-orange-300 transition-colors"
@@ -416,25 +874,22 @@ export default function CourtsidePage() {
             </div>
             {showLocationChange && (
               <InlineLocationPicker
-                sessionId={session?.id ?? null}
+                sessionId={session.id}
                 location={location}
-                onLocationChange={(loc) => {
-                  setLocation(loc)
-                  saveDefaultLocation(loc)
-                }}
+                onLocationChange={(loc) => { setLocation(loc); saveDefaultLocation(loc) }}
                 onClose={() => setShowLocationChange(false)}
               />
             )}
             <div className="mt-4 grid grid-cols-2 gap-4">
               <button
                 onClick={() => { setShowEndSession(false); setShowLocationChange(false) }}
-                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#f0f0f8] transition-all hover:bg-surface-raised active:scale-95"
+                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#f0f0f8] transition-all hover:bg-[#1a1a28] active:scale-95"
               >
                 Cancel
               </button>
               <button
-                onClick={handleEndSession}
-                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-slate-300 transition-all hover:bg-surface-raised active:scale-95"
+                onClick={() => void handleEndSession()}
+                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#94a3b8] transition-all hover:bg-[#1a1a28] active:scale-95"
               >
                 End Session
               </button>
@@ -443,14 +898,73 @@ export default function CourtsidePage() {
         </div>
       )}
 
+      {/* ── Pending games banner ── */}
+      {pendingBanner && (
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center gap-3 bg-amber-500/20 border-b border-amber-500/30 px-4 py-2">
+          <span className="text-xs font-bold text-amber-300">
+            {queue.filter((i) => i.type === 'game').length} game{queue.filter((i) => i.type === 'game').length > 1 ? 's' : ''} pending
+          </span>
+          <button
+            onClick={() => void processQueue()}
+            className="text-xs font-black text-amber-300 underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* ── Undo toast ── */}
+      {undoTarget && (
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-50 w-[calc(100%-28px)] max-w-[400px] rounded-2xl border border-white/[.06] bg-[#1a1a28] px-4 py-3 flex items-center justify-between gap-3 text-[13px] font-bold shadow-2xl transition-all"
+          style={{ bottom: undoToastBottom }}
+        >
+          <span className="text-[#f0f0f8]">Game {undoTarget.gameNumber} saved!</span>
+          <button
+            onClick={() => void handleUndo()}
+            className="text-[#fb923c] font-black text-[13px] border-none bg-none"
+          >
+            Undo
+          </button>
+        </div>
+      )}
+
+      {/* ── Toast ── */}
       {toast && (
-        <Toast
+        <ToastBubble
           key={toast.key}
-          message={toast.message}
+          msg={toast.msg}
           type={toast.type}
           onDismiss={() => setToast(null)}
         />
       )}
-    </main>
+    </>
+  )
+}
+
+// ─── Simple toast bubble ──────────────────────────────────────────────────────
+
+function ToastBubble({
+  msg,
+  type,
+  onDismiss,
+}: {
+  msg: string
+  type: 'success' | 'error'
+  onDismiss: () => void
+}) {
+  const [visible, setVisible] = useState(true)
+  useEffect(() => {
+    const t = setTimeout(() => { setVisible(false); setTimeout(onDismiss, 300) }, 2500)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+  return (
+    <div
+      className={`fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl px-5 py-3 text-white text-[13px] font-semibold shadow-lg transition-all duration-300 ${
+        type === 'error' ? 'bg-red-600' : 'bg-[#22c55e]'
+      } ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}`}
+    >
+      {msg}
+    </div>
   )
 }

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Courtside v2 — Mock (25-player stress test)</title>
+<style>
+  :root{
+    --bg:#08080e; --card:#111118; --raised:#1a1a28;
+    --tangerine:#fb923c; --win:#22c55e;
+    --t1:#3b82f6;
+    --text:#f0f0f8; --text2:#94a3b8; --muted:#555570;
+    --border:rgba(255,255,255,0.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden;}
+  .app{height:100dvh;max-width:430px;margin:0 auto;display:flex;flex-direction:column;}
+
+  /* ── pinned header ───────────────────────────── */
+  .top{flex:none;padding:10px 14px 6px;}
+  h1{font-size:17px;font-weight:900;margin:0;display:inline;}
+  .sub{font-size:11px;color:var(--text2);}
+  .chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;color:var(--text2);background:var(--card);cursor:pointer;}
+  .chip b{color:var(--tangerine);}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .log{display:flex;gap:6px;overflow-x:auto;padding:6px 0 0;}
+  .log span{flex:none;font-size:10px;font-weight:800;color:var(--text2);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:4px 8px;}
+  .log span b{color:var(--text);}
+  .title{font-size:14px;font-weight:900;padding:4px 14px 0;}
+  .title small{display:block;font-size:11px;font-weight:400;color:var(--text2);margin-top:1px;}
+
+  /* ── scrollable middle (grid only) ───────────── */
+  .mid{flex:1;overflow-y:auto;padding:8px 14px 10px;min-height:0;}
+  .grid{display:grid;gap:6px;}
+  .grid.c3{grid-template-columns:repeat(3,1fr);}
+  .grid.c4{grid-template-columns:repeat(4,1fr);}
+  .tile{border-radius:11px;border:1px solid var(--border);background:var(--raised);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    font-weight:700;cursor:pointer;user-select:none;transition:transform .06s,background .12s,border-color .12s;position:relative;
+    min-height:48px;font-size:13px;padding:2px;}
+  .grid.c4 .tile{min-height:44px;font-size:12px;border-radius:10px;}
+  .tile:active{transform:scale(.94);}
+  .tile small{font-size:8px;font-weight:400;color:var(--muted);}
+  .tile.in{border-color:var(--tangerine);background:rgba(251,146,60,.12);}
+  .tile.in::after{content:'✓';position:absolute;top:3px;right:6px;font-size:9px;color:var(--tangerine);}
+  .tile.t1{background:rgba(59,130,246,.24);border-color:var(--t1);color:#dbeafe;}
+  .tile.t2{background:rgba(251,146,60,.24);border-color:var(--tangerine);color:#ffedd5;}
+  .search{width:100%;border-radius:11px;border:1px solid var(--border);background:var(--raised);color:var(--text);
+    padding:9px 12px;font-size:14px;margin-bottom:8px;outline:none;}
+  .search:focus{border-color:var(--tangerine);}
+
+  /* ── pinned bottom bar ───────────────────────── */
+  .bottom{flex:none;padding:8px 14px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(to top, var(--bg) 75%, transparent);}
+  .brushes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+  .brush{border-radius:13px;padding:8px 6px;text-align:center;font-weight:900;font-size:11px;letter-spacing:.06em;cursor:pointer;
+    border:2px solid var(--border);background:var(--card);color:var(--text2);transition:all .12s;display:flex;align-items:center;justify-content:center;gap:8px;}
+  .brush .cnt{font-size:20px;line-height:1;}
+  .brush.b1.active{border-color:var(--t1);color:#bfdbfe;background:rgba(59,130,246,.13);}
+  .brush.b2.active{border-color:var(--tangerine);color:#fed7aa;background:rgba(251,146,60,.13);}
+  .warn{font-size:11px;color:#fbbf24;text-align:center;margin-bottom:6px;min-height:14px;}
+  .cta{width:100%;border:none;border-radius:15px;padding:15px;font-size:17px;font-weight:900;color:#fff;
+    background:var(--tangerine);cursor:pointer;transition:transform .06s,opacity .12s;}
+  .cta:active{transform:scale(.97);}
+  .cta:disabled{opacity:.35;}
+  .ghostbtn{width:100%;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text2);
+    padding:11px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;}
+
+  /* ── score screen ────────────────────────────── */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .scard{border-radius:16px;border:2px solid var(--border);background:var(--raised);padding:10px 6px 8px;text-align:center;cursor:pointer;transition:all .12s;}
+  .scard .lab{font-size:10px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;}
+  .scard.c1 .lab{color:#60a5fa;} .scard.c2 .lab{color:var(--tangerine);}
+  .scard .num{font-size:44px;font-weight:900;line-height:1.05;min-height:48px;}
+  .scard.focus.c1{border-color:var(--t1);}
+  .scard.focus.c2{border-color:var(--tangerine);}
+  .scard.winner .num{color:var(--win);}
+  .scard .roster{font-size:11px;font-weight:700;color:var(--text2);line-height:1.3;min-height:18px;}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:8px;}
+  .key{border-radius:12px;border:1px solid var(--border);background:var(--card);color:var(--text);
+    font-size:21px;font-weight:800;padding:12px 0;text-align:center;cursor:pointer;user-select:none;transition:transform .05s;}
+  .key:active{transform:scale(.93);background:var(--raised);}
+  .key.fn{font-size:14px;color:var(--text2);}
+
+  /* ── next screen / toast / misc ──────────────── */
+  .screen{display:none;flex-direction:column;flex:1;min-height:0;}
+  .screen.on{display:flex;animation:fade .18s ease-out;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .nextwrap{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 14px;}
+  .nextchips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px;}
+  .nchip{border-radius:13px;border:1px solid var(--border);background:var(--card);padding:12px 4px;text-align:center;cursor:pointer;transition:transform .06s;}
+  .nchip:active{transform:scale(.95);}
+  .nchip .e{font-size:19px;} .nchip .t{font-size:11px;font-weight:800;margin-top:2px;} .nchip .d{font-size:8px;color:var(--muted);margin-top:1px;}
+  .nchip.hot{border-color:var(--tangerine);background:rgba(251,146,60,.1);}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(90px);max-width:380px;width:calc(100% - 28px);
+    background:var(--raised);border:1px solid var(--border);border-radius:14px;padding:12px 14px;
+    display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;font-weight:700;
+    box-shadow:0 12px 40px rgba(0,0,0,.6);transition:transform .25s cubic-bezier(.2,.9,.3,1.2);z-index:50;}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+  .toast .undo{color:var(--tangerine);font-weight:900;cursor:pointer;border:none;background:none;font-size:13px;}
+  .fitnote{font-size:9px;color:var(--muted);text-align:center;padding:2px 0 0;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <div class="row">
+      <div>
+        <h1>Courtside</h1>
+        <span class="sub"> · Game <span id="gameNumLbl">1</span> · 📍 Kings PF</span>
+      </div>
+      <button class="chip" id="squadChip" onclick="go('checkin')" style="display:none">Squad · <b id="squadCount">0</b></button>
+    </div>
+    <div class="log" id="log" style="display:none"></div>
+  </div>
+
+  <!-- CHECK-IN -->
+  <div class="screen on" id="checkin">
+    <div class="title">Who showed up?<small>Tap everyone here today — add late arrivals anytime</small></div>
+    <div class="mid">
+      <input class="search" placeholder="Search players…" oninput="filterCheckin(this.value)">
+      <div class="grid c3" id="checkinGrid"></div>
+      <div class="grid c3" id="inactiveGrid" style="display:none"></div>
+      <button class="ghostbtn" id="inactiveToggle" onclick="toggleInactive()">Can't find someone? Inactive players →</button>
+      <button class="ghostbtn">+ New Player</button>
+    </div>
+    <div class="bottom">
+      <button class="cta" id="startBtn" disabled onclick="startGames()">Check in 0 players</button>
+    </div>
+  </div>
+
+  <!-- TEAMS (paint) -->
+  <div class="screen" id="teams">
+    <div class="title">Who played?<small>Pick a team below, tap its players · untapped = sat out</small></div>
+    <div class="mid" id="teamMid">
+      <div class="grid" id="teamGrid"></div>
+      <div class="fitnote" id="fitnote"></div>
+    </div>
+    <div class="bottom">
+      <div class="warn" id="unevenWarn"></div>
+      <div class="brushes">
+        <div class="brush b1 active" id="brush1" onclick="setBrush(1)">TEAM 1 <span class="cnt" id="cnt1">0</span></div>
+        <div class="brush b2" id="brush2" onclick="setBrush(2)">TEAM 2 <span class="cnt" id="cnt2">0</span></div>
+      </div>
+      <button class="cta" id="toScoreBtn" disabled onclick="go('score')">Enter score →</button>
+    </div>
+  </div>
+
+  <!-- SCORE -->
+  <div class="screen" id="score">
+    <div class="title row" style="display:flex;"><span>Final score</span><button class="chip" onclick="go('teams')">← Teams</button></div>
+    <div class="mid">
+      <div class="cards">
+        <div class="scard c1 focus" id="card1" onclick="focusCard(1)">
+          <div class="lab">Team 1</div><div class="num" id="num1">–</div><div class="roster" id="roster1"></div>
+        </div>
+        <div class="scard c2" id="card2" onclick="focusCard(2)">
+          <div class="lab">Team 2</div><div class="num" id="num2">–</div><div class="roster" id="roster2"></div>
+        </div>
+      </div>
+      <div class="pad" id="pad"></div>
+    </div>
+    <div class="bottom">
+      <button class="cta" id="saveBtn" disabled onclick="saveGame()">Save Game</button>
+    </div>
+  </div>
+
+  <!-- NEXT -->
+  <div class="screen" id="next">
+    <div class="nextwrap">
+      <div style="text-align:center;">
+        <div style="font-size:36px;">🏀</div>
+        <div style="font-size:20px;font-weight:900;margin-top:4px;">Game <span id="savedNum">1</span> saved</div>
+        <div class="sub" id="savedScore"></div>
+      </div>
+      <div class="nextchips">
+        <div class="nchip" onclick="nextGame('runback')"><div class="e">🔁</div><div class="t">Runback</div><div class="d">teams prefilled</div></div>
+        <div class="nchip hot" id="winnersChip" onclick="nextGame('winners')"><div class="e">👑</div><div class="t">Winners Stay</div><div class="d">repaint losers</div></div>
+        <div class="nchip" onclick="nextGame('fresh')"><div class="e">✨</div><div class="t">Fresh</div><div class="d">clear all</div></div>
+      </div>
+    </div>
+    <div class="bottom"><button class="ghostbtn">End Session 📰</button></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button class="undo" onclick="hideToast()">Undo</button></div>
+
+<script>
+// 25 players — the stress test
+const NAMES=['Zach','Paul','Mark','Colin','Aidan','Marshall','Robbie','Calvin','Adam','Jesse','Kent','Jimmy','Jordi','Tony','Derek','Luis','Sam','Chris','Dre','Miguel','Trent','Owen','Beto','Khalil','Vince'];
+const LAST=['2d','2d','2d','5d','5d','5d','1w','1w','1w','2w','2w','2w','3w','3w','1mo','1mo','1mo','2mo','2mo','3mo','3mo','4mo','4mo','5mo','6mo'];
+let squad=new Set(), assign={}, brush=1, focusTeam=1, scores={1:'',2:''}, gameNum=1, games=[], lastWinner=null;
+
+// check-in (pre-check all 25 so you can stress-test immediately)
+const cg=document.getElementById('checkinGrid');
+NAMES.forEach((n,i)=>{
+  const d=document.createElement('div'); d.className='tile in'; d.dataset.name=n;
+  d.innerHTML=`${n}<small>${LAST[i]} ago</small>`;
+  squad.add(n);
+  d.onclick=()=>{ squad.has(n)?squad.delete(n):squad.add(n); d.classList.toggle('in'); syncCheckin(); };
+  cg.appendChild(d);
+});
+syncCheckin();
+
+// inactive mode — explicit switch, never mixed into active view
+const INACTIVE=['Robbie','Calvin Floyd','Boyle','Marsh P','Jesse G','Big Mike','Lemons','KC','Dub','Reggie'];
+const ig=document.getElementById('inactiveGrid');
+INACTIVE.forEach(n=>{
+  const d=document.createElement('div'); d.className='tile'; d.style.opacity='.65'; d.dataset.name=n;
+  d.innerHTML=`${n}<small>inactive · 8mo ago</small>`;
+  d.onclick=()=>{
+    // reactivate: move into active grid, checked in
+    const a=document.createElement('div'); a.className='tile in'; a.dataset.name=n;
+    a.innerHTML=`${n}<small>reactivated</small>`;
+    squad.add(n);
+    a.onclick=()=>{ squad.has(n)?squad.delete(n):squad.add(n); a.classList.toggle('in'); syncCheckin(); };
+    cg.appendChild(a); d.remove(); syncCheckin();
+    showToast(`${n} reactivated & checked in ✓`);
+    toggleInactive(); // snap back to active view
+  };
+  ig.appendChild(d);
+});
+let inactiveMode=false;
+function toggleInactive(){
+  inactiveMode=!inactiveMode;
+  cg.style.display=inactiveMode?'none':'grid';
+  ig.style.display=inactiveMode?'grid':'none';
+  document.getElementById('inactiveToggle').textContent=inactiveMode?'← Back to active players':"Can't find someone? Inactive players →";
+  document.querySelector('#checkin .title').innerHTML=inactiveMode
+    ?'INACTIVE PLAYERS<small>Tap to reactivate & check in</small>'
+    :'Who showed up?<small>Tap everyone here today — add late arrivals anytime</small>';
+}
+function filterCheckin(q){ q=q.toLowerCase(); const grid=inactiveMode?ig:cg; [...grid.children].forEach(t=>t.style.display=t.dataset.name.toLowerCase().includes(q)?'':'none'); }
+function syncCheckin(){
+  const n=squad.size, b=document.getElementById('startBtn');
+  b.textContent=n?`Check in ${n} player${n>1?'s':''}`:'Check in 0 players'; b.disabled=n<4;
+  document.getElementById('squadCount').textContent=n;
+}
+function startGames(){ document.getElementById('squadChip').style.display='inline-flex'; buildTeamGrid(); go('teams'); }
+
+// paint builder — density adapts so the grid fits without scrolling
+function buildTeamGrid(){
+  const g=document.getElementById('teamGrid'); g.innerHTML='';
+  const n=squad.size;
+  g.className='grid '+(n>16?'c4':'c3');
+  [...squad].forEach(name=>{
+    const d=document.createElement('div'); d.className='tile'+(assign[name]?' t'+assign[name]:''); d.textContent=name;
+    d.onclick=()=>{
+      if(assign[name]===brush){ delete assign[name]; }
+      else { assign[name]=brush; }
+      d.className='tile'+(assign[name]?' t'+assign[name]:'');
+      syncTeams();
+    };
+    g.appendChild(d);
+  });
+  requestAnimationFrame(()=>{
+    const mid=document.getElementById('teamMid');
+    const fits=g.scrollHeight<=mid.clientHeight-14;
+    document.getElementById('fitnote').textContent=
+      `${n} players · ${fits?'fits — no scroll':'grid scrolls; controls stay pinned'}`;
+  });
+  syncTeams();
+}
+function setBrush(b){ brush=b;
+  document.getElementById('brush1').classList.toggle('active',b===1);
+  document.getElementById('brush2').classList.toggle('active',b===2);
+}
+function teamList(t){ return Object.keys(assign).filter(n=>assign[n]===t); }
+function rosterLabel(t){ const l=teamList(t); return l.slice(0,2).join(', ')+(l.length>2?' +'+(l.length-2):''); }
+function syncTeams(){
+  const a=teamList(1).length, b=teamList(2).length;
+  document.getElementById('cnt1').textContent=a;
+  document.getElementById('cnt2').textContent=b;
+  document.getElementById('toScoreBtn').disabled=!(a>=2&&b>=2);
+  document.getElementById('unevenWarn').textContent=(a>=2&&b>=2&&a!==b)?'⚠️ Teams are uneven — fine if that\u2019s right':'';
+}
+
+// keypad
+const pad=document.getElementById('pad');
+[1,2,3,4,5,6,7,8,9,'⌫',0,'⇄'].forEach(k=>{
+  const d=document.createElement('div'); d.className='key'+(typeof k==='string'?' fn':''); d.textContent=k;
+  d.onclick=()=>{
+    if(k==='⌫'){ scores[focusTeam]=scores[focusTeam].slice(0,-1); }
+    else if(k==='⇄'){ focusCard(focusTeam===1?2:1); return; }
+    else if(scores[focusTeam].length<3){ scores[focusTeam]+=k; if(navigator.vibrate)navigator.vibrate(8); }
+    syncScore();
+  };
+  pad.appendChild(d);
+});
+function focusCard(t){ focusTeam=t;
+  document.getElementById('card1').classList.toggle('focus',t===1);
+  document.getElementById('card2').classList.toggle('focus',t===2);
+}
+function syncScore(){
+  document.getElementById('num1').textContent=scores[1]||'–';
+  document.getElementById('num2').textContent=scores[2]||'–';
+  const s1=parseInt(scores[1]), s2=parseInt(scores[2]);
+  document.getElementById('card1').classList.toggle('winner',!isNaN(s1)&&!isNaN(s2)&&s1>s2);
+  document.getElementById('card2').classList.toggle('winner',!isNaN(s1)&&!isNaN(s2)&&s2>s1);
+  document.getElementById('saveBtn').disabled=!(scores[1]!==''&&scores[2]!=='');
+}
+
+// save / next
+function saveGame(){
+  const s1=parseInt(scores[1]), s2=parseInt(scores[2]);
+  lastWinner = s1===s2?null:(s1>s2?1:2);
+  games.push([gameNum,scores[1],scores[2]]);
+  const log=document.getElementById('log'); log.style.display='flex';
+  log.innerHTML=games.map(g=>`<span>G${g[0]} <b>${g[1]}–${g[2]}</b></span>`).join('');
+  document.getElementById('savedNum').textContent=gameNum;
+  document.getElementById('savedScore').textContent=`Team 1 ${scores[1]} — ${scores[2]} Team 2`;
+  document.getElementById('winnersChip').style.display=lastWinner?'' : 'none';
+  showToast(`Game ${gameNum} saved`);
+  gameNum++; document.getElementById('gameNumLbl').textContent=gameNum;
+  go('next');
+}
+function nextGame(mode){
+  if(mode==='fresh'){ assign={}; }
+  else if(mode==='winners'&&lastWinner){
+    const keep=teamList(lastWinner); assign={}; keep.forEach(n=>assign[n]=1); setBrush(2);
+  }
+  scores={1:'',2:''}; syncScore(); focusCard(1); buildTeamGrid();
+  go('teams');  // always verify teams first, even on Runback
+}
+
+// nav / toast
+function go(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  document.getElementById(id).classList.add('on');
+  const t=document.getElementById('toast');
+  if(t.classList.contains('show')){
+    const bar=document.querySelector('.screen.on .bottom');
+    t.style.bottom=(bar?bar.offsetHeight+8:18)+'px';
+  }
+  if(id==='score'){
+    document.getElementById('roster1').textContent=rosterLabel(1);
+    document.getElementById('roster2').textContent=rosterLabel(2);
+  }
+  if(id==='teams') buildTeamGrid();
+}
+let toastTimer;
+function showToast(msg){
+  document.getElementById('toastMsg').textContent=msg;
+  const t=document.getElementById('toast');
+  // dock above the active screen's pinned bottom bar so it never covers a control
+  const bar=document.querySelector('.screen.on .bottom');
+  t.style.bottom=(bar?bar.offsetHeight+8:18)+'px';
+  t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(hideToast,8000);
+}
+function hideToast(){ document.getElementById('toast').classList.remove('show'); }
+</script>
+</body>
+</html>
