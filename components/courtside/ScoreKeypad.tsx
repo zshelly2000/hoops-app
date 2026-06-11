@@ -67,6 +67,8 @@ export function ScoreKeypad({
   squadCount,
 }: Props) {
   const [focus, setFocus] = useState<1 | 2>(1)
+  // Increments per entry on each card; used as a React key to re-trigger the pop animation
+  const [pops, setPops] = useState<{ 1: number; 2: number }>({ 1: 0, 2: 0 })
 
   const t1Num = t1Score === '' ? null : parseInt(t1Score, 10)
   const t2Num = t2Score === '' ? null : parseInt(t2Score, 10)
@@ -91,6 +93,7 @@ export function ScoreKeypad({
       next = current + key
     }
 
+    setPops((p) => ({ ...p, [focus]: p[focus] + 1 }))
     if (focus === 1) onScoreChange(next, t2Score)
     else onScoreChange(t1Score, next)
   }
@@ -146,7 +149,12 @@ export function ScoreKeypad({
             } bg-[#1a1a28]`}
           >
             <div className="text-[10px] font-black uppercase tracking-[.1em] text-[#60a5fa] mb-0.5">Team 1</div>
-            <div className={`text-[44px] font-black leading-[1.05] min-h-[48px] ${t1Wins ? 'text-[#22c55e]' : 'text-[#f0f0f8]'}`}>
+            <div
+              key={`n1-${pops[1]}`}
+              className={`text-[44px] font-black leading-[1.05] min-h-[48px] [font-variant-numeric:tabular-nums] ${
+                t1Wins ? 'keypad-num-winner' : 'text-[#f0f0f8]'
+              } ${pops[1] > 0 ? 'keypad-num-pop' : ''}`}
+            >
               {t1Score || <span className="opacity-20">–</span>}
             </div>
             <div className="text-[11px] font-bold text-[#94a3b8] leading-snug min-h-[18px] mt-0.5">
@@ -162,7 +170,12 @@ export function ScoreKeypad({
             } bg-[#1a1a28]`}
           >
             <div className="text-[10px] font-black uppercase tracking-[.1em] text-[#fb923c] mb-0.5">Team 2</div>
-            <div className={`text-[44px] font-black leading-[1.05] min-h-[48px] ${t2Wins ? 'text-[#22c55e]' : 'text-[#f0f0f8]'}`}>
+            <div
+              key={`n2-${pops[2]}`}
+              className={`text-[44px] font-black leading-[1.05] min-h-[48px] [font-variant-numeric:tabular-nums] ${
+                t2Wins ? 'keypad-num-winner' : 'text-[#f0f0f8]'
+              } ${pops[2] > 0 ? 'keypad-num-pop' : ''}`}
+            >
               {t2Score || <span className="opacity-20">–</span>}
             </div>
             <div className="text-[11px] font-bold text-[#94a3b8] leading-snug min-h-[18px] mt-0.5">
@@ -177,7 +190,7 @@ export function ScoreKeypad({
             <button
               key={key}
               onClick={() => pressKey(key)}
-              className={`rounded-xl border border-white/[.06] bg-[#111118] py-3 text-center transition-all active:scale-[.93] active:bg-[#1a1a28] select-none ${
+              className={`keypad-glass-key py-3 text-center select-none ${
                 key === '⌫' || key === '⇄' ? 'text-[14px] font-bold text-[#94a3b8]' : 'text-[21px] font-black text-[#f0f0f8]'
               }`}
             >

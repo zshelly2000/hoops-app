@@ -48,3 +48,49 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   border-radius: 14px;
 }
+
+/* ── Courtside score keypad — Dark Lift glass material ──────────────────── */
+
+.keypad-glass-key {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  font-variant-numeric: tabular-nums;
+  transition: transform 0.08s cubic-bezier(0.2, 1.4, 0.4, 1), background 0.1s, box-shadow 0.1s;
+}
+
+.keypad-glass-key:active {
+  transform: scale(0.9);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* digit pop on entry */
+@keyframes keypad-pop {
+  0% { transform: scale(0.82); }
+  100% { transform: scale(1); }
+}
+
+.keypad-num-pop {
+  animation: keypad-pop 0.18s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+/* winner ignition: plasma gradient on the digits */
+@keyframes keypad-ignite {
+  0% { filter: brightness(0.7); transform: scale(0.96); }
+  55% { filter: brightness(1.6); transform: scale(1.06); }
+  100% { filter: brightness(1); transform: scale(1); }
+}
+
+.keypad-num-winner {
+  background: linear-gradient(135deg, #818cf8, #c084fc, #fb923c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* iOS Safari: more reliable than color:transparent for clipped gradient text */
+  -webkit-text-fill-color: transparent;
+  animation: keypad-ignite 0.4s ease-out;
+}

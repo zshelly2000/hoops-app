@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Keypad — Flat vs Glass</title>
+<style>
+  :root{
+    --bg:#08080e; --card:#111118; --raised:#1a1a28;
+    --tangerine:#fb923c; --win:#22c55e; --t1:#3b82f6;
+    --text:#f0f0f8; --text2:#94a3b8; --muted:#555570;
+    --border:rgba(255,255,255,0.06);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;min-height:100vh;}
+  .wrap{width:100%;max-width:430px;padding:18px 14px calc(20px + env(safe-area-inset-bottom));}
+  h1{font-size:16px;font-weight:900;margin:0 0 2px;}
+  .sub{font-size:12px;color:var(--text2);margin-bottom:14px;}
+
+  .toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:4px;margin-bottom:18px;}
+  .toggle button{border:none;border-radius:9px;padding:9px;font-size:13px;font-weight:800;cursor:pointer;background:none;color:var(--text2);}
+  .toggle button.on{background:var(--raised);color:var(--tangerine);}
+
+  /* score cards */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .scard{border-radius:18px;border:2px solid var(--border);background:var(--raised);padding:12px 6px 10px;text-align:center;cursor:pointer;transition:border-color .15s;}
+  .scard .lab{font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;}
+  .scard.c1 .lab{color:#60a5fa;}.scard.c2 .lab{color:var(--tangerine);}
+  .scard .num{font-size:50px;font-weight:900;line-height:1.05;min-height:54px;font-variant-numeric:tabular-nums;transition:transform .12s;}
+  .scard.focus.c1{border-color:var(--t1);}.scard.focus.c2{border-color:var(--tangerine);}
+  .scard .roster{font-size:11px;font-weight:700;color:var(--text2);min-height:16px;}
+  .num.pop{animation:pop .18s cubic-bezier(.2,1.6,.4,1);}
+  @keyframes pop{0%{transform:scale(.82)}100%{transform:scale(1)}}
+  /* winner ignition: plasma gradient on the digits */
+  .scard.winner .num{
+    background:linear-gradient(135deg,#818cf8,#c084fc,#fb923c);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:ignite .4s ease-out;
+  }
+  @keyframes ignite{0%{filter:brightness(.7);transform:scale(.96)}55%{filter:brightness(1.6);transform:scale(1.06)}100%{filter:brightness(1);transform:scale(1)}}
+
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px;}
+
+  /* STYLE A — current flat */
+  .flat .key{border-radius:13px;border:1px solid var(--border);background:var(--card);color:var(--text);
+    font-size:23px;font-weight:800;padding:14px 0;text-align:center;cursor:pointer;user-select:none;transition:transform .05s;}
+  .flat .key:active{transform:scale(.93);background:var(--raised);}
+
+  /* STYLE B — Dark Lift glass */
+  .glass .key{
+    border-radius:18px;
+    background:rgba(255,255,255,0.045);
+    border:1px solid rgba(255,255,255,0.07);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.35);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    color:var(--text);
+    font-size:24px;font-weight:800;padding:15px 0;text-align:center;cursor:pointer;user-select:none;
+    font-variant-numeric:tabular-nums;
+    transition:transform .08s cubic-bezier(.2,1.4,.4,1), background .1s, box-shadow .1s;
+  }
+  .glass .key:active{
+    transform:scale(.9);
+    background:rgba(255,255,255,0.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .key.fn{font-size:15px;color:var(--text2);}
+
+  .cta{width:100%;border:none;border-radius:16px;padding:16px;font-size:17px;font-weight:900;color:#fff;background:var(--tangerine);cursor:pointer;margin-top:16px;}
+  .note{font-size:11px;color:var(--muted);text-align:center;margin-top:14px;line-height:1.5;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Final score</h1>
+  <div class="sub">Toggle styles · enter unequal scores to see the winner ignite</div>
+
+  <div class="toggle">
+    <button id="tFlat" onclick="setStyle('flat')">Current — Flat</button>
+    <button id="tGlass" class="on" onclick="setStyle('glass')">Dark Lift Glass</button>
+  </div>
+
+  <div class="cards">
+    <div class="scard c1 focus" id="card1" onclick="focusCard(1)">
+      <div class="lab">Team 1</div><div class="num" id="num1">–</div><div class="roster">Zach, Paul +3</div>
+    </div>
+    <div class="scard c2" id="card2" onclick="focusCard(2)">
+      <div class="lab">Team 2</div><div class="num" id="num2">–</div><div class="roster">Mark, Colin +3</div>
+    </div>
+  </div>
+
+  <div class="pad glass" id="pad"></div>
+  <button class="cta">Save Game</button>
+  <div class="note">Same hit areas, same layout, same digits.<br>Only the key material and press physics change.</div>
+</div>
+
+<script>
+let focusTeam=1, scores={1:'',2:''};
+const pad=document.getElementById('pad');
+[1,2,3,4,5,6,7,8,9,'⌫',0,'⇄'].forEach(k=>{
+  const d=document.createElement('div'); d.className='key'+(typeof k==='string'?' fn':''); d.textContent=k;
+  d.onclick=()=>{
+    if(k==='⌫'){scores[focusTeam]=scores[focusTeam].slice(0,-1);}
+    else if(k==='⇄'){focusCard(focusTeam===1?2:1);return;}
+    else if(scores[focusTeam].length<3){scores[focusTeam]+=k;if(navigator.vibrate)navigator.vibrate(8);}
+    sync(true);
+  };
+  pad.appendChild(d);
+});
+function focusCard(t){focusTeam=t;
+  document.getElementById('card1').classList.toggle('focus',t===1);
+  document.getElementById('card2').classList.toggle('focus',t===2);}
+function sync(typed){
+  const n1=document.getElementById('num1'),n2=document.getElementById('num2');
+  n1.textContent=scores[1]||'–'; n2.textContent=scores[2]||'–';
+  if(typed){const n=document.getElementById('num'+focusTeam);n.classList.remove('pop');void n.offsetWidth;n.classList.add('pop');}
+  const s1=parseInt(scores[1]),s2=parseInt(scores[2]);
+  document.getElementById('card1').classList.toggle('winner',!isNaN(s1)&&!isNaN(s2)&&s1>s2);
+  document.getElementById('card2').classList.toggle('winner',!isNaN(s1)&&!isNaN(s2)&&s2>s1);
+}
+function setStyle(s){
+  pad.className='pad '+s;
+  document.getElementById('tFlat').classList.toggle('on',s==='flat');
+  document.getElementById('tGlass').classList.toggle('on',s==='glass');
+}
+</script>
+</body>
+</html>
