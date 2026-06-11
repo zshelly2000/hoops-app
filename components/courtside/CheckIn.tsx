@@ -26,6 +26,8 @@ interface Props {
   onToggle: (playerId: string) => void
   onNewPlayer: () => void
   onDone: () => void
+  onClearAll: () => void
+  onOpenNav: () => void
   isOverlay: boolean
   gameCount: number
   location: string
@@ -41,6 +43,8 @@ export function CheckIn({
   onToggle,
   onNewPlayer,
   onDone,
+  onClearAll,
+  onOpenNav,
   isOverlay,
   gameCount,
   location,
@@ -143,12 +147,20 @@ export function CheckIn({
               location={location}
               onLocationChange={onLocationChange}
             />
-            {isOverlay && (
+            {isOverlay ? (
               <button
                 onClick={onDone}
                 className="rounded-full border border-white/[.08] bg-white/[.04] px-3 py-1 text-xs font-bold text-[#fb923c]"
               >
                 Done
+              </button>
+            ) : (
+              <button
+                onClick={onOpenNav}
+                aria-label="App navigation"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-[#111118] text-[13px] leading-none text-[#94a3b8]"
+              >
+                ⊞
               </button>
             )}
           </div>
@@ -260,6 +272,16 @@ export function CheckIn({
 
       {/* Pinned bottom CTA */}
       <div className="flex-none px-3.5 pb-[calc(14px+env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-[#08080e] via-[#08080e]/90 to-transparent">
+        {squadCount > 0 && !inactiveMode && (
+          <div className="mb-1.5 text-center">
+            <button
+              onClick={onClearAll}
+              className="text-[11px] font-semibold text-[#555570] underline underline-offset-2 hover:text-[#94a3b8]"
+            >
+              Clear all ({squadCount})
+            </button>
+          </div>
+        )}
         <button
           onClick={onDone}
           disabled={squadCount < 2}

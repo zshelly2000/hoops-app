@@ -43,6 +43,7 @@ interface Props {
   onLocationChange: (loc: string) => void
   onSquadChip: () => void
   onEndSession: () => void
+  onOpenNav: () => void
   squadCount: number
 }
 
@@ -62,6 +63,7 @@ export function ScoreKeypad({
   onLocationChange,
   onSquadChip,
   onEndSession,
+  onOpenNav,
   squadCount,
 }: Props) {
   const [focus, setFocus] = useState<1 | 2>(1)
@@ -109,12 +111,21 @@ export function ScoreKeypad({
               onLocationChange={onLocationChange}
             />
           </div>
-          <button
-            onClick={onSquadChip}
-            className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-[#111118] px-2.5 py-1 text-[11px] font-bold text-[#94a3b8]"
-          >
-            Squad · <b className="text-[#fb923c]">{squadCount}</b>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onSquadChip}
+              className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-[#111118] px-2.5 py-1 text-[11px] font-bold text-[#94a3b8]"
+            >
+              Squad · <b className="text-[#fb923c]">{squadCount}</b>
+            </button>
+            <button
+              onClick={onOpenNav}
+              aria-label="App navigation"
+              className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-[#111118] text-[13px] leading-none text-[#94a3b8]"
+            >
+              ⊞
+            </button>
+          </div>
         </div>
       </div>
 

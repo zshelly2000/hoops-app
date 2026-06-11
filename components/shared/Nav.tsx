@@ -10,13 +10,12 @@ const links = [
   { href: '/players', label: 'Roster', icon: '👥' },
 ]
 
-export function Nav() {
-  const pathname = usePathname()
+export { links as navLinks }
 
-  // Courtside screens own the full viewport with their own pinned bottom bar.
-  // The global nav would overlay their CTAs and appear broken (orange bleed-through).
-  // The start screen renders <Nav /> directly so the user is never stranded.
-  if (pathname.startsWith('/courtside')) return null
+// The rendered nav bar, no route guard — usable anywhere (e.g. the courtside
+// start screen, which suppresses the global Nav but still needs navigation).
+export function NavBar() {
+  const pathname = usePathname()
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-safe">
@@ -42,4 +41,14 @@ export function Nav() {
       </div>
     </nav>
   )
+}
+
+// Global nav rendered from the root layout. Courtside screens own the full
+// viewport with their own pinned bottom bar, so the nav is suppressed there;
+// the courtside start screen renders <NavBar /> directly instead, and the
+// in-session screens expose nav links via an on-demand bottom sheet.
+export function Nav() {
+  const pathname = usePathname()
+  if (pathname.startsWith('/courtside')) return null
+  return <NavBar />
 }

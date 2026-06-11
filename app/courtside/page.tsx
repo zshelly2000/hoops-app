@@ -7,7 +7,8 @@ import { PaintMode } from '@/components/courtside/PaintMode'
 import { ScoreKeypad } from '@/components/courtside/ScoreKeypad'
 import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
-import { Nav } from '@/components/shared/Nav'
+import { NavBar, navLinks } from '@/components/shared/Nav'
+import Link from 'next/link'
 import { LocationPill, InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
 import { useRetryQueue } from '@/hooks/useRetryQueue'
@@ -105,6 +106,7 @@ export default function CourtsidePage() {
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [pendingBanner, setPendingBanner] = useState(false)
   const [showEndSession, setShowEndSession] = useState(false)
+  const [showNavSheet, setShowNavSheet] = useState(false)
   const [showLocationChange, setShowLocationChange] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; key: number } | null>(null)
   const [gameCount, setGameCount] = useState(0)
@@ -186,9 +188,7 @@ export default function CourtsidePage() {
 
   useEffect(() => {
     if (!session) return
-    if (squadOrder.length > 0) {
-      saveJSON(squadKey(session.id), squadOrder)
-    }
+    saveJSON(squadKey(session.id), squadOrder)
   }, [session, squadOrder])
 
   useEffect(() => {
@@ -413,12 +413,10 @@ export default function CourtsidePage() {
         setScreen('paint')
         showToast('Squad kept from last session')
       } else {
-        // Fresh start: build squad from sorted active players (use all active as starting suggestion)
-        const active = allPlayers.filter((p) => p.is_active)
-        const sorted = sortPlayers(active, lastPlayed)
-        const order = sorted.map((p) => p.id)
+        // Fresh start: check-in always begins empty — the user taps who showed up.
+        // squadOrder is populated as players are checked in (append-only, stable).
         setSquadIds(new Set())
-        setSquadOrder(order)
+        setSquadOrder([])
         setScreen('checkin')
       }
 
@@ -499,6 +497,16 @@ export default function CourtsidePage() {
 
   // ─── Game assignment ──────────────────────────────────────────────────────────
 
+  // Clear all checked-in players except those assigned to a team in the
+  // current draft (those can't be removed, mirroring the per-tile rule).
+  function handleClearSquad() {
+    setSquadIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => assignments.has(id)))
+      return next
+    })
+    setSquadOrder((o) => o.filter((id) => assignments.has(id)))
+  }
+
   function handleAssign(playerId: string, team: TeamSlot | null) {
     setAssignments((prev) => {
       const next = new Map(prev)
@@ -533,10 +541,13 @@ export default function CourtsidePage() {
     setSavedGames((prev) => [...prev, optimisticEntry])
     setGameCount(newCount)
 
-    // Clear draft for next game
+    // Clear draft for next game — also persist the cleared draft immediately so
+    // navigating away from the post-game screen (where the draft effect doesn't
+    // run) resumes on a clean paint screen instead of the pre-save score entry.
     setAssignments(new Map())
     setT1Score('')
     setT2Score('')
+    saveJSON(draftKey(session.id), { assignments: [], t1: '', t2: '', screen: 'paint' })
 
     setLastGameInfo({ number: newCount, winnerTeam })
     setScreen('postgame')
@@ -721,9 +732,9 @@ export default function CourtsidePage() {
               {startingSession ? 'Starting…' : "Start Today's Run"}
             </button>
           </div>
-          {/* Nav is suppressed globally on /courtside; render it here so the start
-              screen is not a navigational dead end before a session exists. */}
-          <Nav />
+          {/* Nav is suppressed globally on /courtside; render the unguarded bar
+              here so the start screen is not a navigational dead end. */}
+          <NavBar />
         </main>
       )}
 
@@ -752,6 +763,8 @@ export default function CourtsidePage() {
             setSquadOrder(newOrder)
             setScreen('paint')
           }}
+          onClearAll={handleClearSquad}
+          onOpenNav={() => setShowNavSheet(true)}
           isOverlay={false}
           gameCount={gameCount}
           location={location}
@@ -771,6 +784,7 @@ export default function CourtsidePage() {
           onEnterScore={() => setScreen('score')}
           onSquadChip={openSquadOverlay}
           onEndSession={() => setShowEndSession(true)}
+          onOpenNav={() => setShowNavSheet(true)}
           savedGames={savedGames}
           gameCount={gameCount}
           location={location}
@@ -798,6 +812,7 @@ export default function CourtsidePage() {
           onLocationChange={handleLocationChange}
           onSquadChip={openSquadOverlay}
           onEndSession={() => setShowEndSession(true)}
+          onOpenNav={() => setShowNavSheet(true)}
           squadCount={squadIds.size}
         />
       )}
@@ -812,6 +827,7 @@ export default function CourtsidePage() {
           onFresh={handleFresh}
           onEndSession={() => setShowEndSession(true)}
           onSquadChip={openSquadOverlay}
+          onOpenNav={() => setShowNavSheet(true)}
           savedGames={savedGames}
           location={location}
           session={session}
@@ -839,6 +855,8 @@ export default function CourtsidePage() {
             }}
             onNewPlayer={() => setShowAddPlayer(true)}
             onDone={closeSquadOverlay}
+            onClearAll={handleClearSquad}
+            onOpenNav={() => setShowNavSheet(true)}
             isOverlay={true}
             gameCount={gameCount}
             location={location}
@@ -898,6 +916,47 @@ export default function CourtsidePage() {
                 End Session
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── App navigation sheet (in-session escape to the rest of the app) ── */}
+      {showNavSheet && (
+        <div
+          className="fixed inset-0 z-[55] flex items-end justify-center bg-black/60"
+          onClick={() => setShowNavSheet(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-t-3xl bg-[#111118] px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="mb-3 text-center text-xs font-bold uppercase tracking-wider text-[#555570]">
+              Go to — your session keeps running
+            </p>
+            <ul className="flex gap-1.5">
+              {navLinks.map((link) => (
+                <li key={link.href} className="flex-1">
+                  <Link
+                    href={link.href}
+                    onClick={() => setShowNavSheet(false)}
+                    className={`flex flex-col items-center gap-1 rounded-2xl border py-3 text-xs font-semibold transition-colors ${
+                      link.href === '/courtside'
+                        ? 'border-[#fb923c]/40 bg-[rgba(251,146,60,0.08)] text-[#fb923c]'
+                        : 'border-white/[.06] bg-[#1a1a28] text-[#94a3b8]'
+                    }`}
+                  >
+                    <span className="text-xl leading-none">{link.icon}</span>
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={() => setShowNavSheet(false)}
+              className="mt-3 w-full rounded-xl border border-white/[.06] py-2.5 text-[13px] font-bold text-[#94a3b8]"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
