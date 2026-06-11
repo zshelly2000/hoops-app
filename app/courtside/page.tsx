@@ -9,7 +9,7 @@ import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
 import { NavBar, navLinks } from '@/components/shared/Nav'
 import Link from 'next/link'
-import { LocationPill, InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
+import { InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
 import { useRetryQueue } from '@/hooks/useRetryQueue'
 import type { QueueItem } from '@/hooks/useRetryQueue'
@@ -42,8 +42,29 @@ interface StashedSquad {
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 
 const STASH_KEY = 'hoops_stashed_squad'
+const STORAGE_VERSION_KEY = 'hoops_courtside_storage_v'
+const STORAGE_VERSION = '2'
 const squadKey = (id: string) => `hoops_squad_${id}`
 const draftKey = (id: string) => `hoops_draft_${id}`
+
+// Remove session-scoped courtside keys (squad, draft), optionally sparing one
+// session's keys. The stash is only removed when explicitly requested — it must
+// survive a reload between a game-1 undo and the next session start. The retry
+// queue and default location always survive.
+function purgeSessionKeys(opts: { spareSessionId?: string; includeStash?: boolean } = {}) {
+  const doomed: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (!key) continue
+    const isSessionScoped = key.startsWith('hoops_squad_') || key.startsWith('hoops_draft_')
+    const spared = opts.spareSessionId !== undefined &&
+      (key === squadKey(opts.spareSessionId) || key === draftKey(opts.spareSessionId))
+    if ((isSessionScoped && !spared) || (key === STASH_KEY && opts.includeStash)) {
+      doomed.push(key)
+    }
+  }
+  doomed.forEach((key) => localStorage.removeItem(key))
+}
 
 function loadJSON<T>(key: string): T | null {
   if (typeof window === 'undefined') return null
@@ -125,6 +146,15 @@ export default function CourtsidePage() {
     async function init() {
       setLoading(true)
       try {
+        // One-time migration: squad/draft keys written by pre-release builds
+        // could hold bad state (e.g. every player pre-checked-in). Purge all
+        // session-scoped keys once per storage version. Retry queue and
+        // default location are format-compatible and survive.
+        if (localStorage.getItem(STORAGE_VERSION_KEY) !== STORAGE_VERSION) {
+          purgeSessionKeys({ includeStash: true })
+          localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION)
+        }
+
         const [playersRes, statsRes] = await Promise.all([
           fetch('/api/players', { cache: 'no-store' }),
           fetch('/api/stats', { cache: 'no-store' }),
@@ -175,6 +205,14 @@ export default function CourtsidePage() {
             } else {
               setScreen(savedSquad && savedSquad.length >= 2 ? 'paint' : 'checkin')
             }
+
+            // Ongoing housekeeping: drop squad/draft keys from any other
+            // session (e.g. sessions that never went through End Session).
+            purgeSessionKeys({ spareSessionId: todaySession.id })
+          } else {
+            // No open session today — squad/draft keys are orphans. The stash
+            // survives: it bridges a game-1 undo to the next session start.
+            purgeSessionKeys()
           }
         }
       } finally {
@@ -644,6 +682,20 @@ export default function CourtsidePage() {
   async function handleEndSession() {
     if (!session) return
     const sessionId = session.id
+
+    // Hard gate: the Rundown must never generate without every game saved.
+    // If any game is still in the offline retry queue, kick a retry and abort.
+    const pendingGames = queue.filter((i) => i.type === 'game').length
+    if (pendingGames > 0) {
+      void processQueue()
+      setShowEndSession(false)
+      showToast(
+        `${pendingGames} game${pendingGames > 1 ? 's' : ''} not saved yet — retrying. End the session once ${pendingGames > 1 ? "they're" : "it's"} saved.`,
+        'error',
+      )
+      return
+    }
+
     try {
       const res = await fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' })
       if (!res.ok) throw new Error('Failed to end session')
@@ -885,6 +937,13 @@ export default function CourtsidePage() {
             <p className="mb-1 text-center text-sm text-[#94a3b8]">
               This will generate your Rundown story.
             </p>
+            {queue.some((i) => i.type === 'game') && (
+              <p className="mb-1 text-center text-xs font-bold text-amber-400">
+                ⚠ {queue.filter((i) => i.type === 'game').length} game
+                {queue.filter((i) => i.type === 'game').length > 1 ? 's' : ''} still pending —
+                must save before the Rundown can generate.
+              </p>
+            )}
             <div className="mb-4 flex items-center justify-center gap-2">
               <span className="text-sm text-[#94a3b8]">📍 {location}</span>
               <button
