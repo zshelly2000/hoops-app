@@ -57,19 +57,19 @@ interface GameLogRow {
 }
 
 interface TeammateStatRow {
-  player1_id: string
-  player2_id: string
+  player_id: string
+  teammate_id: string
   games_together: number
   wins_together: number
   win_pct_together: number
 }
 
 interface OpponentStatRow {
-  player1_id: string
-  player2_id: string
-  games_played: number
-  player1_wins: number
-  player2_wins: number
+  player_id: string
+  opponent_id: string
+  games_against: number
+  wins_against: number
+  losses_against: number
 }
 
 interface GameStrengthRow {
@@ -165,8 +165,8 @@ function detectHotDuo(
 ): NarrativeCandidate | null {
   const qualifying = teammateStats.filter(
     (row) =>
-      sessionPlayerIds.has(row.player1_id) &&
-      sessionPlayerIds.has(row.player2_id) &&
+      sessionPlayerIds.has(row.player_id) &&
+      sessionPlayerIds.has(row.teammate_id) &&
       row.games_together >= 4 &&
       row.win_pct_together >= 0.7,
   )
@@ -176,8 +176,8 @@ function detectHotDuo(
   qualifying.sort((a, b) => b.win_pct_together - a.win_pct_together)
   const best = qualifying[0]
 
-  const p1 = playerMap.get(best.player1_id)
-  const p2 = playerMap.get(best.player2_id)
+  const p1 = playerMap.get(best.player_id)
+  const p2 = playerMap.get(best.teammate_id)
   if (!p1 || !p2) return null
 
   const wins = best.wins_together
@@ -186,8 +186,8 @@ function detectHotDuo(
     .toString()
     .padStart(3, '0')
 
-  const p1Stats = playerStats.find((ps) => ps.player_id === best.player1_id)
-  const p2Stats = playerStats.find((ps) => ps.player_id === best.player2_id)
+  const p1Stats = playerStats.find((ps) => ps.player_id === best.player_id)
+  const p2Stats = playerStats.find((ps) => ps.player_id === best.teammate_id)
 
   const withStats = playerStats.filter((ps) => ps.avg_plus_minus !== null && ps.games_played > 0)
   const groupAvgPM = withStats.length > 0
@@ -198,8 +198,8 @@ function detectHotDuo(
   const byGame = groupByGame(gamePlayers)
   const todayGamesTogether: { game_number: number; team1_score: number; team2_score: number; winning_team: 1 | 2 | null }[] = []
   for (const [gameId, gps] of Array.from(byGame.entries())) {
-    const p1e = gps.find((gp) => gp.player_id === best.player1_id)
-    const p2e = gps.find((gp) => gp.player_id === best.player2_id)
+    const p1e = gps.find((gp) => gp.player_id === best.player_id)
+    const p2e = gps.find((gp) => gp.player_id === best.teammate_id)
     if (p1e && p2e && p1e.team === p2e.team) {
       const g = games.find((game) => game.id === gameId)
       if (g) {
@@ -217,8 +217,8 @@ function detectHotDuo(
     narrative_type: 'hot_duo',
     headline_hint: `${displayName(p1)} & ${displayName(p2)}: ${wins}-${losses} together, .${winPctStr} win%`,
     body_data: {
-      player1_id: best.player1_id,
-      player2_id: best.player2_id,
+      player1_id: best.player_id,
+      player2_id: best.teammate_id,
       games_together: best.games_together,
       wins_together: wins,
       losses_together: losses,
@@ -228,7 +228,7 @@ function detectHotDuo(
       group_avg_plus_minus: groupAvgPM,
       today_games_together: todayGamesTogether,
     },
-    player_ids: [best.player1_id, best.player2_id],
+    player_ids: [best.player_id, best.teammate_id],
     priority: Math.round(best.win_pct_together * 100),
     angle_options: ['dominance', 'chemistry', 'numbers', 'challenger', 'historical'],
   }
@@ -363,30 +363,38 @@ function detectRivalry(
 ): NarrativeCandidate | null {
   const qualifying = opponentStats.filter(
     (row) =>
-      sessionPlayerIds.has(row.player1_id) &&
-      sessionPlayerIds.has(row.player2_id) &&
-      row.games_played >= 6 &&
-      Math.abs(row.player1_wins - row.player2_wins) <= 2,
+      sessionPlayerIds.has(row.player_id) &&
+      sessionPlayerIds.has(row.opponent_id) &&
+      row.games_against >= 6 &&
+      Math.abs(row.wins_against - row.losses_against) <= 2,
   )
 
-  if (qualifying.length === 0) return null
+  // opponent_stats is directed — every rivalry appears as two mirror rows (A→B and
+  // B→A) with identical games_against, and a near-even rivalry survives the filter
+  // from both directions. Collapse to one canonical row per unordered pair
+  // (player_id < opponent_id) so each rivalry appears exactly once before sorting.
+  const canonical = qualifying.filter((row) => row.player_id < row.opponent_id)
 
-  const best = qualifying[0]
+  if (canonical.length === 0) return null
 
-  const p1 = playerMap.get(best.player1_id)
-  const p2 = playerMap.get(best.player2_id)
+  // Pick the most-played qualifying rivalry, not an arbitrary arrival-order row.
+  canonical.sort((a, b) => b.games_against - a.games_against)
+  const best = canonical[0]
+
+  const p1 = playerMap.get(best.player_id)
+  const p2 = playerMap.get(best.opponent_id)
   if (!p1 || !p2) return null
 
   const rankMap = buildRankMap(playerStats)
-  const p1Stats = playerStats.find((ps) => ps.player_id === best.player1_id)
-  const p2Stats = playerStats.find((ps) => ps.player_id === best.player2_id)
+  const p1Stats = playerStats.find((ps) => ps.player_id === best.player_id)
+  const p2Stats = playerStats.find((ps) => ps.player_id === best.opponent_id)
 
   // Find today's matchup (p1 and p2 on opposite teams)
   const byGame = groupByGame(gamePlayers)
   let todayMatchupScore: string | null = null
   for (const [gameId, gps] of Array.from(byGame.entries())) {
-    const p1e = gps.find((gp) => gp.player_id === best.player1_id)
-    const p2e = gps.find((gp) => gp.player_id === best.player2_id)
+    const p1e = gps.find((gp) => gp.player_id === best.player_id)
+    const p2e = gps.find((gp) => gp.player_id === best.opponent_id)
     if (p1e && p2e && p1e.team !== p2e.team) {
       const g = games.find((game) => game.id === gameId)
       if (g) {
@@ -398,20 +406,20 @@ function detectRivalry(
 
   return {
     narrative_type: 'rivalry',
-    headline_hint: `${displayName(p1)} vs ${displayName(p2)}: ${best.player1_wins}-${best.player2_wins} all-time, met again today`,
+    headline_hint: `${displayName(p1)} vs ${displayName(p2)}: ${best.wins_against}-${best.losses_against} all-time, met again today`,
     body_data: {
-      player1_id: best.player1_id,
-      player2_id: best.player2_id,
-      player1_wins: best.player1_wins,
-      player2_wins: best.player2_wins,
-      games_played: best.games_played,
-      player1_rank: rankMap.get(best.player1_id) ?? null,
-      player2_rank: rankMap.get(best.player2_id) ?? null,
+      player1_id: best.player_id,
+      player2_id: best.opponent_id,
+      player1_wins: best.wins_against,
+      player2_wins: best.losses_against,
+      games_played: best.games_against,
+      player1_rank: rankMap.get(best.player_id) ?? null,
+      player2_rank: rankMap.get(best.opponent_id) ?? null,
       player1_avg_plus_minus: p1Stats?.avg_plus_minus ?? null,
       player2_avg_plus_minus: p2Stats?.avg_plus_minus ?? null,
       today_matchup_score: todayMatchupScore,
     },
-    player_ids: [best.player1_id, best.player2_id],
+    player_ids: [best.player_id, best.opponent_id],
     priority: 40,
     angle_options: [
       'even_series',
@@ -1102,7 +1110,15 @@ ${getAngleInstruction(candidate.narrative_type)}`,
     if (!response.ok) return null
 
     const data = (await response.json()) as { content?: Array<{ text?: string }> }
-    const text = data.content?.[0]?.text ?? ''
+    const raw = data.content?.[0]?.text ?? ''
+    // Some responses wrap the JSON in markdown fences despite the "no backticks"
+    // instruction. Strip a leading ```json / ``` and a trailing ``` (and surrounding
+    // whitespace) so fenced output parses instead of being silently dropped.
+    const text = raw
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim()
     const parsed = JSON.parse(text) as { headline?: unknown; body?: unknown }
 
     if (typeof parsed.headline !== 'string' || typeof parsed.body !== 'string') return null
