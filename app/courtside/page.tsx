@@ -7,6 +7,7 @@ import { PaintMode } from '@/components/courtside/PaintMode'
 import { ScoreKeypad } from '@/components/courtside/ScoreKeypad'
 import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
+import { ShareRundown } from '@/components/courtside/ShareRundown'
 import { NavBar, navLinks } from '@/components/shared/Nav'
 import Link from 'next/link'
 import { InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
@@ -127,6 +128,7 @@ export default function CourtsidePage() {
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [pendingBanner, setPendingBanner] = useState(false)
   const [showEndSession, setShowEndSession] = useState(false)
+  const [shareSessionId, setShareSessionId] = useState<string | null>(null)
   const [showNavSheet, setShowNavSheet] = useState(false)
   const [showLocationChange, setShowLocationChange] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error'; key: number } | null>(null)
@@ -706,7 +708,7 @@ export default function CourtsidePage() {
 
     setShowEndSession(false)
     setShowLocationChange(false)
-    showToast('Rundown generating… 📰')
+    setShareSessionId(sessionId)
     setSession(null)
     setGameCount(0)
     setAssignments(new Map())
@@ -977,6 +979,11 @@ export default function CourtsidePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Share the Rundown (post–End Session) ── */}
+      {shareSessionId && (
+        <ShareRundown sessionId={shareSessionId} onClose={() => setShareSessionId(null)} />
       )}
 
       {/* ── App navigation sheet (in-session escape to the rest of the app) ── */}
