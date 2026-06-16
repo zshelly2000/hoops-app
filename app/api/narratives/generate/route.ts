@@ -1049,6 +1049,18 @@ function prune(facts: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
+// Substance-scaled ceiling on how many candidate stories the editor may RECEIVE.
+// A prompt ceiling alone proved unreliable across four rounds — the model tells every
+// true story it is handed — so we enforce length structurally, the same way prune
+// enforces grounding: the editor physically cannot write a story for a candidate it
+// was never given. Base scales with games played; each genuine tonight event
+// (milestone / perfect sweep / upset) lifts the cap by one, so a low-game but eventful
+// night still reads full.
+function candidateCap(gamesTonight: number, notableEventCount: number): number {
+  const base = gamesTonight <= 3 ? 2 : gamesTonight <= 6 ? 3 : 4
+  return base + notableEventCount
+}
+
 function buildSlate(
   candidates: NarrativeCandidate[],
   playerMap: Map<string, PlayerName>,
@@ -1467,18 +1479,16 @@ export async function POST(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Consolidated editorial pass. Hand the whole candidate slate to ONE Opus
-    // 4.8 emit_edition call (forced tool-use). The editor picks the lead by
+    // Consolidated editorial pass. Hand a substance-capped candidate slate to ONE
+    // Opus 4.8 emit_edition call (forced tool-use). The editor picks the lead by
     // newsworthiness, dedups overlapping players, and writes the full edition in
-    // one structured response — no priority sort, no per-player dedup, no
+    // one structured response — no priority sort for ORDER, no per-player dedup, no
     // per-story fan-out, no angle/tone rotation.
     // -----------------------------------------------------------------------
-    const slate = buildSlate(candidates, playerMap)
 
-    // Substance signal — how much GENUINELY happened tonight, so the editor sizes
-    // the edition to the night. Only elevating events (a milestone, a perfect sweep,
-    // a real upset) make a low-game night read full; routine rivalries / returns /
-    // recaps / ranks are standing-flavored content, not events.
+    // Substance signal — how much GENUINELY happened tonight. Only elevating events
+    // (a milestone, a perfect sweep, a real upset) make a low-game night read full;
+    // routine rivalries / returns / recaps / ranks are content, not events.
     const ELEVATING_EVENT_TYPES = new Set(['perfect_session', 'veteran_milestone', 'upset'])
     const notableTonightEvents = candidates
       .filter((c) => ELEVATING_EVENT_TYPES.has(c.narrative_type))
@@ -1488,6 +1498,15 @@ export async function POST(request: Request) {
       notable_tonight_event_count: notableTonightEvents.length,
       notable_tonight_events: notableTonightEvents,
     }
+
+    // Structural length control (applied to the editor's OUTPUT, below — NOT to its
+    // input). The editor sees the FULL slate so its dedup, fact-folding, and lead choice
+    // stay intact; input-capping was tried and rejected because pre-filtering by priority
+    // concentrated the slate on one player (two Tyler candidates) and the editor then
+    // double-featured him, and the sparse slate also tripped malformed tool output.
+    const cap = candidateCap(substance.games_tonight, substance.notable_tonight_event_count)
+
+    const slate = buildSlate(candidates, playerMap)
 
     interface NarrativeInsert {
       session_id: string
@@ -1511,9 +1530,16 @@ export async function POST(request: Request) {
         // box score / OG avatars / leaderboard links keep their player_ids and
         // raw facts. (Each narrative_type appears at most once among candidates.)
         const byType = new Map(candidates.map((c) => [c.narrative_type, c]))
+        // Apply the substance cap to the editor's OUTPUT: keep the lead plus its top
+        // (cap - 1) secondaries IN THE EDITOR'S OWN ORDER, dropping its lowest-ranked
+        // ones. Because the editor already ranks secondaries by its own newsworthiness
+        // judgment, this trims the WEAKEST stories it chose, never the lead. On a thin
+        // night this can drop a real, true story — a deliberate trade of edition SHAPE
+        // (a tight, lean read) for completeness.
+        const keptSecondaries = edition.secondaries.slice(0, Math.max(0, cap - 1))
         const stories = [
           { ...edition.lead, is_lead: true },
-          ...edition.secondaries.map((s) => ({ ...s, is_lead: false })),
+          ...keptSecondaries.map((s) => ({ ...s, is_lead: false })),
         ]
         stories.forEach((story, idx) => {
           if (typeof story.headline !== 'string' || typeof story.body !== 'string') return
