@@ -361,30 +361,36 @@ function detectRivalry(
     | { winner: string; loser: string; winner_score: number; loser_score: number }
     | { tie: true; players: [string, string]; score: string }
     | null = null
+  // Count EVERY tonight game where the two were on opposite teams (not just the first).
+  // Without this the editor invented the count ("one of two meetings" when they met 4
+  // times); todayMatchup stays the first such game as the representative result.
+  let todayMeetingCount = 0
   for (const [gameId, gps] of Array.from(byGame.entries())) {
     const p1e = gps.find((gp) => gp.player_id === best.player_id)
     const p2e = gps.find((gp) => gp.player_id === best.opponent_id)
     if (p1e && p2e && p1e.team !== p2e.team) {
       const g = games.find((game) => game.id === gameId)
       if (g) {
-        const p1Score = p1e.team === 1 ? g.team1_score : g.team2_score
-        const p2Score = p2e.team === 1 ? g.team1_score : g.team2_score
-        if (g.winning_team === null) {
-          todayMatchup = {
-            tie: true,
-            players: [displayName(p1), displayName(p2)],
-            score: `${p1Score}-${p2Score}`,
-          }
-        } else {
-          const p1Won = g.winning_team === p1e.team
-          todayMatchup = {
-            winner: displayName(p1Won ? p1 : p2),
-            loser: displayName(p1Won ? p2 : p1),
-            winner_score: p1Won ? p1Score : p2Score,
-            loser_score: p1Won ? p2Score : p1Score,
+        todayMeetingCount++
+        if (!todayMatchup) {
+          const p1Score = p1e.team === 1 ? g.team1_score : g.team2_score
+          const p2Score = p2e.team === 1 ? g.team1_score : g.team2_score
+          if (g.winning_team === null) {
+            todayMatchup = {
+              tie: true,
+              players: [displayName(p1), displayName(p2)],
+              score: `${p1Score}-${p2Score}`,
+            }
+          } else {
+            const p1Won = g.winning_team === p1e.team
+            todayMatchup = {
+              winner: displayName(p1Won ? p1 : p2),
+              loser: displayName(p1Won ? p2 : p1),
+              winner_score: p1Won ? p1Score : p2Score,
+              loser_score: p1Won ? p2Score : p1Score,
+            }
           }
         }
-        break
       }
     }
   }
@@ -403,6 +409,7 @@ function detectRivalry(
       player1_avg_plus_minus: p1Stats?.avg_plus_minus ?? null,
       player2_avg_plus_minus: p2Stats?.avg_plus_minus ?? null,
       today_matchup: todayMatchup,
+      today_meeting_count: todayMeetingCount,
     },
     player_ids: [best.player_id, best.opponent_id],
     priority: 40,
@@ -1110,10 +1117,13 @@ function buildSlate(
           | { winner: string; loser: string; winner_score: number; loser_score: number }
           | { tie: true; players: [string, string]; score: string }
           | null
+        // meetings_tonight is the GROUND-TRUTH count of times they were on opposite
+        // teams tonight; `result` is just ONE of those meetings (the representative).
+        const meetings = b.today_meeting_count as number
         if (m && 'tie' in m) {
-          tonight = { met_tonight: true, result: `${m.players[0]} and ${m.players[1]} tied ${m.score}` }
+          tonight = { met_tonight: true, meetings_tonight: meetings, result: `${m.players[0]} and ${m.players[1]} tied ${m.score}` }
         } else if (m) {
-          tonight = { met_tonight: true, result: `${m.winner} beat ${m.loser} ${m.winner_score}-${m.loser_score}` }
+          tonight = { met_tonight: true, meetings_tonight: meetings, result: `${m.winner} beat ${m.loser} ${m.winner_score}-${m.loser_score}` }
         } else {
           tonight = { met_tonight: false }
         }
@@ -1273,6 +1283,7 @@ HARD FACT RULES (violating these breaks the feature):
 - BANNED INFERENCE — duos: if a duo entry has tonight.teamed_up_tonight = false, you MUST NOT imply they played together, "reunited," "reconnected," or did anything "tonight." Their record together is STANDING context only — a season-long fact, never a tonight reunion.
 - BANNED INFERENCE — rankings: any rank in the slate is a STALE nightly snapshot. NEVER say tonight changed someone's rank or that they "climbed" tonight. State a current rank only as a standing fact.
 - BANNED INFERENCE — standing deltas: a standing total (series record, series margin, career W-L, games count) ALREADY reflects everything including tonight. Tonight's result does NOT move it. NEVER say a margin "is now down to," "narrows to," "cut to," "trims to one," or a record "improves to," "climbs to" because of tonight. Copy the margin/record from the slate field verbatim ("series_lead_margin": 2 means by two, full stop) — do not add or subtract tonight's game from it.
+- BANNED INFERENCE — tonight meeting count: state how many times a pair met/played tonight ONLY from the "meetings_tonight" field; never infer it. The "result" shown is ONE representative meeting, NOT the whole tonight head-to-head — never imply that single result covers all of tonight's meetings, and never claim a count ("met twice," "their two games") unless meetings_tonight says so.
 - Use ONLY the numbers in the slate. Never invent, round, or extrapolate a stat.
 - ABSENCE IS NOT A FACT: state only what the slate contains. NEVER narrate the absence of something — no "nobody went undefeated," "no one swept," "nobody hit a milestone," "no ties tonight," "no blowouts," "the lone blowout." If a fact is not in an entry, it did not happen for you; say nothing about it.
 - NO ALL-TIME OR CROSS-FIELD SUPERLATIVES: a superlative ("closest," "biggest," "tightest," "highest," "lowest," "most," "longest-running") is allowed ONLY for tonight and ONLY when a slate field states it (a recap's biggest_blowout / closest_game, a defensive battle's lowest-scoring game). NEVER assert a career or all-time superlative — "their closest meeting ever," "tightest of 160 games," "first time in months," "lowest-scoring all year." And NEVER rank one slate entry against others that aren't there — "the longest-running feud in the group," "the group's best duo": you see ONE rivalry / ONE duo, not the field, so you cannot know it leads the group. The slate carries aggregate standing totals (e.g. a 79-81 series count) but NO per-game history and NO cross-pair comparison. Do not extrapolate a superlative from an aggregate.
