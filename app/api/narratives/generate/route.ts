@@ -1285,11 +1285,81 @@ STYLE:
 
 Return the edition ONLY via the emit_edition tool.`
 
-async function generateEdition(
+type ContentBlock = { type?: string; name?: string; input?: unknown }
+
+const KNOWN_TYPES = [
+  'hot_duo', 'individual_streak', 'cold_streak', 'rivalry', 'upset', 'climber',
+  'veteran_milestone', 'session_recap', 'defensive_battle', 'shootout',
+  'perfect_session', 'returner',
+]
+
+function isStory(x: unknown): x is EditionStory {
+  return (
+    !!x && typeof x === 'object' &&
+    typeof (x as EditionStory).type === 'string' &&
+    typeof (x as EditionStory).headline === 'string' &&
+    typeof (x as EditionStory).body === 'string'
+  )
+}
+
+// Recover the story type even when the model emits it malformed (the observed
+// failure put `type` inside a broken string like '\n<parameter name="type">rivalry').
+// The type only drives raw_data/player_id mapping; default to session_recap (no
+// player_ids) when unrecoverable so a salvaged story still writes a valid row.
+function coerceType(raw: unknown): string {
+  if (typeof raw === 'string') {
+    const hit = KNOWN_TYPES.find((t) => raw.includes(t))
+    if (hit) return hit
+  }
+  return 'session_recap'
+}
+
+/**
+ * Robustly assemble a {lead, secondaries} edition from the model's tool_use output.
+ * Forced tool-use is supposed to return one emit_edition block with a nested lead, but
+ * Opus intermittently malforms it. Observed modes, all handled here:
+ *  - WELL-FORMED: one block, nested {lead:{type,headline,body}, secondaries}.
+ *  - FLATTENED: lead emitted as a broken string with headline/body hoisted to the top
+ *    level of the input — reconstruct the lead from those and recover the type.
+ *  - SPLIT: the call spread across multiple tool_use blocks (e.g. one with the lead,
+ *    another with secondaries) — merge across all blocks.
+ * Returns null only when no usable lead can be recovered (→ caller retries, then falls
+ * back to a slate-built recap; never an empty edition).
+ */
+function parseEditionFromContent(
+  content: ContentBlock[] | undefined,
+): { lead: EditionStory; secondaries: EditionStory[] } | null {
+  const inputs = (content ?? [])
+    .filter((b) => b?.type === 'tool_use' && b?.name === 'emit_edition')
+    .map((b) => b.input)
+    .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+  if (inputs.length === 0) return null
+
+  let lead: EditionStory | null = null
+  const secondaries: EditionStory[] = []
+
+  for (const obj of inputs) {
+    if (!lead && isStory(obj.lead)) {
+      lead = obj.lead as EditionStory
+    } else if (!lead && typeof obj.headline === 'string' && typeof obj.body === 'string') {
+      // Flattened/broken-lead salvage: headline+body live at the top level.
+      lead = { type: coerceType(obj.type ?? obj.lead), headline: obj.headline, body: obj.body }
+    }
+    if (Array.isArray(obj.secondaries)) {
+      for (const s of obj.secondaries) if (isStory(s)) secondaries.push(s)
+    }
+  }
+
+  return lead ? { lead, secondaries } : null
+}
+
+// One forced-tool-use request to Opus 4.8. Returns the raw content blocks (so the
+// caller can parse + retry), or null on a non-OK / thrown request.
+async function callEditorialModel(
   slate: SlateEntry[],
   substance: Substance,
   session: RawSession,
-): Promise<{ lead: EditionStory; secondaries: EditionStory[] } | null> {
+): Promise<ContentBlock[] | null> {
   try {
     const runLabel = new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -1324,31 +1394,67 @@ ${JSON.stringify(slate, null, 2)}`,
     })
 
     if (!response.ok) return null
-
-    // Read structured data directly off the tool_use block — never JSON.parse of
-    // model text. A forced tool call cannot preamble or fence.
-    const data = (await response.json()) as {
-      content?: Array<{ type?: string; name?: string; input?: unknown }>
-    }
-    const tool = data.content?.find((bl) => bl.type === 'tool_use' && bl.name === 'emit_edition')
-    const input = tool?.input as { lead?: EditionStory; secondaries?: EditionStory[] } | undefined
-
-    if (
-      !input ||
-      !input.lead ||
-      typeof input.lead.type !== 'string' ||
-      typeof input.lead.headline !== 'string' ||
-      typeof input.lead.body !== 'string'
-    ) {
-      return null
-    }
-
-    return {
-      lead: input.lead,
-      secondaries: Array.isArray(input.secondaries) ? input.secondaries : [],
-    }
+    const data = (await response.json()) as { content?: ContentBlock[] }
+    return data.content ?? null
   } catch {
     return null
+  }
+}
+
+// Generate the edition with a reliability guard: up to 3 attempts, each parsed by the
+// salvage-aware parser, with a brief backoff between tries. Malformed output is
+// stochastic, so a single retry can also land malformed — three attempts make a clean
+// parse overwhelmingly likely. Returns null only if ALL attempts fail to parse; the
+// handler then writes a slate-based fallback recap so the edition is never empty.
+async function generateEdition(
+  slate: SlateEntry[],
+  substance: Substance,
+  session: RawSession,
+): Promise<{ lead: EditionStory; secondaries: EditionStory[] } | null> {
+  const MAX_ATTEMPTS = 3
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const content = await callEditorialModel(slate, substance, session)
+    const parsed = parseEditionFromContent(content ?? undefined)
+    if (parsed) {
+      if (attempt > 1) console.warn(`[rundown] editorial parsed OK on attempt ${attempt}/${MAX_ATTEMPTS}`)
+      return parsed
+    }
+    console.warn(
+      `[rundown] editorial attempt ${attempt}/${MAX_ATTEMPTS} ${content ? 'malformed (unparseable tool output)' : 'request failed'}`,
+    )
+    if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, attempt * 300))
+  }
+  return null
+}
+
+// Last-resort edition built WITHOUT the model, from the session_recap candidate's
+// already-slate-grounded facts (scores, counts, top performer). Plain, but factual and
+// guaranteed — a bare recap beats an empty Rundown when every model attempt malforms.
+function buildFallbackEdition(
+  candidates: NarrativeCandidate[],
+  playerMap: Map<string, PlayerName>,
+): { lead: EditionStory; secondaries: EditionStory[] } | null {
+  const recap = candidates.find((c) => c.narrative_type === 'session_recap')
+  if (!recap) return null
+  void playerMap
+
+  const b = recap.body_data as Record<string, unknown>
+  const games = Number(b.total_games ?? 0)
+  const players = Number(b.total_players ?? 0)
+  const points = Number(b.total_points ?? 0)
+
+  let body = `${players} player${players === 1 ? '' : 's'} ran ${games} game${games === 1 ? '' : 's'} for ${points} total points.`
+  if (typeof b.top_performer === 'string' && b.top_performer_avg_pm != null) {
+    const pm = Number(b.top_performer_avg_pm)
+    body += ` ${b.top_performer} led the night at ${pm >= 0 ? '+' : ''}${pm} average plus-minus.`
+  }
+  if (typeof b.closest_game === 'string' && b.closest_game !== 'N/A') {
+    body += ` The closest game finished ${b.closest_game}.`
+  }
+
+  return {
+    lead: { type: 'session_recap', headline: `${games}-game run recap`, body },
+    secondaries: [],
   }
 }
 
@@ -1524,7 +1630,16 @@ export async function POST(request: Request) {
     const narrativesToInsert: NarrativeInsert[] = []
 
     if (slate.length > 0) {
-      const edition = await generateEdition(slate, substance, session)
+      // Reliability guard: if all editorial attempts malform, fall back to a plain
+      // slate-built recap rather than writing nothing — an empty Rundown is the worst
+      // failure mode for a "read it right after the run" feature.
+      let edition = await generateEdition(slate, substance, session)
+      if (!edition) {
+        edition = buildFallbackEdition(candidates, playerMap)
+        if (edition) {
+          console.error('[rundown] all editorial attempts failed — wrote slate-based recap fallback')
+        }
+      }
       if (edition) {
         // Map each story's type back to the candidate that produced it, so the
         // box score / OG avatars / leaderboard links keep their player_ids and
