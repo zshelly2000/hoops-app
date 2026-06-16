@@ -81,44 +81,7 @@ interface GameStrengthRow {
   upset_margin: number
 }
 
-interface NarrativeAngleRow {
-  id: string
-  narrative_type: string
-  last_angle: string | null
-  last_tone: string | null
-  last_used_at: string | null
-}
-
-interface PreviousNarrativeRow {
-  narrative_type: string
-  body: string
-  angle_used: string
-  tone_used: string
-}
-
 type PlayerName = { name: string; nickname: string | null }
-
-// ---------------------------------------------------------------------------
-// Enriched candidate (after angle/tone are determined)
-// ---------------------------------------------------------------------------
-
-type EnrichedCandidate = NarrativeCandidate & {
-  angle_used: string
-  tone_used: string
-}
-
-// ---------------------------------------------------------------------------
-// Angle / tone rotation
-// ---------------------------------------------------------------------------
-
-const TONES = ['analytical', 'dramatic', 'understated', 'conversational'] as const
-
-function nextAngle(angleOptions: string[], lastAngle: string | null): string {
-  if (!lastAngle || angleOptions.length === 0) return angleOptions[0] ?? 'general'
-  const idx = angleOptions.indexOf(lastAngle)
-  if (idx === -1) return angleOptions[0]
-  return angleOptions[(idx + 1) % angleOptions.length]
-}
 
 function displayName(p: PlayerName): string {
   return p.nickname ?? p.name
@@ -390,15 +353,37 @@ function detectRivalry(
   const p2Stats = playerStats.find((ps) => ps.player_id === best.opponent_id)
 
   // Find today's matchup (p1 and p2 on opposite teams)
+  // Resolve tonight's head-to-head game to an explicit WINNER-ATTRIBUTED result.
+  // (A bare team1-team2 score forces the editor to infer who won, which inverted
+  // a real edition — team1 isn't always the canonical player's side.)
   const byGame = groupByGame(gamePlayers)
-  let todayMatchupScore: string | null = null
+  let todayMatchup:
+    | { winner: string; loser: string; winner_score: number; loser_score: number }
+    | { tie: true; players: [string, string]; score: string }
+    | null = null
   for (const [gameId, gps] of Array.from(byGame.entries())) {
     const p1e = gps.find((gp) => gp.player_id === best.player_id)
     const p2e = gps.find((gp) => gp.player_id === best.opponent_id)
     if (p1e && p2e && p1e.team !== p2e.team) {
       const g = games.find((game) => game.id === gameId)
       if (g) {
-        todayMatchupScore = `${g.team1_score}-${g.team2_score}`
+        const p1Score = p1e.team === 1 ? g.team1_score : g.team2_score
+        const p2Score = p2e.team === 1 ? g.team1_score : g.team2_score
+        if (g.winning_team === null) {
+          todayMatchup = {
+            tie: true,
+            players: [displayName(p1), displayName(p2)],
+            score: `${p1Score}-${p2Score}`,
+          }
+        } else {
+          const p1Won = g.winning_team === p1e.team
+          todayMatchup = {
+            winner: displayName(p1Won ? p1 : p2),
+            loser: displayName(p1Won ? p2 : p1),
+            winner_score: p1Won ? p1Score : p2Score,
+            loser_score: p1Won ? p2Score : p1Score,
+          }
+        }
         break
       }
     }
@@ -417,7 +402,7 @@ function detectRivalry(
       player2_rank: rankMap.get(best.opponent_id) ?? null,
       player1_avg_plus_minus: p1Stats?.avg_plus_minus ?? null,
       player2_avg_plus_minus: p2Stats?.avg_plus_minus ?? null,
-      today_matchup_score: todayMatchupScore,
+      today_matchup: todayMatchup,
     },
     player_ids: [best.player_id, best.opponent_id],
     priority: 40,
@@ -919,6 +904,7 @@ function detectReturner(
   sessionGameIds: Set<string>,
   playerStats: PlayerStatsFull[],
   playerMap: Map<string, PlayerName>,
+  sessionDate: string,
 ): NarrativeCandidate | null {
   // Count how many games each player played today
   const todayGameCount = new Map<string, number>()
@@ -959,10 +945,14 @@ function detectReturner(
   const lastGameDate = nonTodayLogs.length > 0
     ? nonTodayLogs[nonTodayLogs.length - 1].session_date
     : null
-  let daysAway = 30 // minimum by definition (not in 30-day log)
+  let daysAway = 30 // minimum by definition (not in the lookback window)
   if (lastGameDate) {
     const last = new Date(lastGameDate + 'T12:00:00')
-    daysAway = Math.round((Date.now() - last.getTime()) / (1000 * 60 * 60 * 24))
+    // Anchor to the SESSION's date, not Date.now(), so the gap is measured as of
+    // the run being written about (correct in production — session is current —
+    // and correct when regenerating an older edition).
+    const asOf = new Date(sessionDate + 'T12:00:00')
+    daysAway = Math.round((asOf.getTime() - last.getTime()) / (1000 * 60 * 60 * 24))
   }
 
   // W-L before leaving = total minus today's contribution
@@ -1002,65 +992,296 @@ function detectReturner(
 }
 
 // ---------------------------------------------------------------------------
-// Per-type angle instruction
+// Slate builder — turn the raw candidate list into editor-facing facts.
+//
+// Governing principle: the editor receives ONLY facts clearly tagged as either
+// "tonight" (happened this run) or "standing" (all-time / context), and must
+// never blur the two. Names are always resolved (never raw UUIDs), and the only
+// rank presented is the 5+-games leaderboard rank (it must match the portal).
 // ---------------------------------------------------------------------------
 
-function getAngleInstruction(narrative_type: string): string {
-  const instructions: Record<string, string> = {
-    individual_streak:
-      "Don't just report the streak — ask what it reveals about this player right now.",
-    cold_streak:
-      'Focus on what needs to change, not just that they\'re losing. Find the pattern in the losses.',
-    hot_duo:
-      "Don't just cite the record — explain why this pairing works. What do they give each other?",
-    rivalry:
-      "This isn't just a record — it's a relationship. What does the history between these two mean?",
-    upset:
-      'The math said one thing, the scoreboard said another. Make the reader feel the gap.',
-    climber:
-      "State the player's current rank clearly and explain it is among players with 5+ games. Name the players ranked just below them. Focus on current stats and trajectory — do not claim a specific number of spots climbed.",
-    veteran_milestone:
-      "This isn't about the number — it's about what this person represents to the group.",
-    session_recap:
-      'Give the session an identity. Every run has a defining characteristic — find it.',
-    defensive_battle:
-      "Low scores aren't boring — they're a war. Make the reader feel the grind.",
-    shootout:
-      'Pure offense is chaos and joy. Let the energy of the scoring show in the writing.',
-    perfect_session:
-      "Going undefeated isn't luck at this level. What made them untouchable today?",
-    returner:
-      'Thirty days away is an eternity in pickup basketball. What did they come back to? What did they miss?',
+interface SlateEntry {
+  type: string
+  players: string[]
+  tonight: Record<string, unknown>
+  standing: Record<string, unknown>
+}
+
+interface EditionStory {
+  type: string
+  headline: string
+  body: string
+}
+
+// Editorial guidance (NOT printable facts): how substantive the night genuinely
+// was, so the editor can size the edition honestly instead of treating 3 stories as
+// a floor and padding with standing context. game count + a count of ELEVATING
+// tonight events (milestone / perfect sweep / upset) — routine rivalries, returns,
+// recaps, and ranks are night content, not elevating events.
+interface Substance {
+  games_tonight: number
+  notable_tonight_event_count: number
+  notable_tonight_events: string[]
+}
+
+function pct(p: number): string {
+  return '.' + Math.round(p * 1000).toString().padStart(3, '0')
+}
+
+// Whole-percent string so the editor never has to multiply a 0.xx win rate by 100.
+function pctWhole(p: number | null | undefined): string | null {
+  return p === null || p === undefined ? null : `${Math.round(p * 100)}%`
+}
+
+// Strip absent fields so the editor only ever sees PRESENT, true facts. A field
+// that isn't in the slate cannot be narrated as an absence ("nobody went
+// undefeated" was undefeated_player:null read as a positive claim). Removes
+// null/undefined, empty strings, the 'N/A' sentinel, and empty arrays — but KEEPS
+// 0 and false, which are real facts (a +/- of 0; teamed_up_tonight:false, the
+// banned-inference guard that must survive).
+function prune(facts: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(facts)) {
+    if (v === null || v === undefined || v === '' || v === 'N/A') continue
+    if (Array.isArray(v) && v.length === 0) continue
+    out[k] = v
   }
-  return instructions[narrative_type] ?? ''
+  return out
+}
+
+function buildSlate(
+  candidates: NarrativeCandidate[],
+  playerMap: Map<string, PlayerName>,
+): SlateEntry[] {
+  const name = (id: string) => {
+    const p = playerMap.get(id)
+    return p ? displayName(p) : id
+  }
+
+  const entries: SlateEntry[] = []
+  for (const c of candidates) {
+    const b = c.body_data as Record<string, unknown>
+    const players = c.player_ids.map(name)
+    let tonight: Record<string, unknown> = {}
+    let standing: Record<string, unknown> = {}
+
+    switch (c.narrative_type) {
+      case 'hot_duo': {
+        const today = (b.today_games_together as unknown[]) ?? []
+        standing = {
+          record_together: `${b.wins_together}-${b.losses_together} as teammates across ${b.games_together} games (${pct(b.win_pct_together as number)} win rate)`,
+        }
+        // FIX 1: explicit "did NOT play together tonight" flag — banned-inference guard.
+        tonight = { teamed_up_tonight: today.length > 0 }
+        break
+      }
+      case 'rivalry': {
+        // FIX 4: drop the all-players rank fields entirely; the rivalry carries no
+        // canonical rank (the climber's 5+-games rank is the only one we present).
+        // Pre-compute the series leader + margin so the editor copies the spread
+        // rather than subtracting two records itself (it once said "by one" for 81-79).
+        const w1 = b.player1_wins as number
+        const w2 = b.player2_wins as number
+        const margin = Math.abs(w1 - w2)
+        const series_summary =
+          w1 === w2
+            ? `The series is tied ${w1}-${w2} across ${b.games_played} games`
+            : `${w1 > w2 ? players[0] : players[1]} leads the series ${Math.max(w1, w2)}-${Math.min(w1, w2)}, by ${margin} game${margin === 1 ? '' : 's'}, across ${b.games_played} games`
+        standing = {
+          series_summary,
+          series_leader: w1 === w2 ? null : w1 > w2 ? players[0] : players[1],
+          series_lead_margin: margin,
+        }
+        // WINNER-ATTRIBUTED tonight result — a pre-formatted string the editor copies,
+        // never a bare score it must assign a direction to.
+        const m = b.today_matchup as
+          | { winner: string; loser: string; winner_score: number; loser_score: number }
+          | { tie: true; players: [string, string]; score: string }
+          | null
+        if (m && 'tie' in m) {
+          tonight = { met_tonight: true, result: `${m.players[0]} and ${m.players[1]} tied ${m.score}` }
+        } else if (m) {
+          tonight = { met_tonight: true, result: `${m.winner} beat ${m.loser} ${m.winner_score}-${m.loser_score}` }
+        } else {
+          tonight = { met_tonight: false }
+        }
+        break
+      }
+      case 'climber': {
+        // Canonical 5+-games leaderboard rank (matches the portal).
+        standing = {
+          rank: `#${b.current_rank} among players with 5+ games, by average plus-minus`,
+          avg_plus_minus: b.avg_plus_minus,
+          win_pct: pctWhole(b.win_pct as number | null),
+          games_played: b.games_played,
+          players_just_below: b.players_near_rank,
+        }
+        tonight = { record: `${b.session_wins}-${b.session_losses}` }
+        break
+      }
+      case 'returner': {
+        standing = {
+          days_away: b.days_away,
+          record_before_return: `${b.pre_wins}-${b.pre_losses}`,
+        }
+        // FIX 2: the REAL return_result from the detector (never a mock value).
+        tonight = { result: b.return_result, margins: b.return_margins }
+        break
+      }
+      case 'session_recap':
+        // NOTE: most_wins_player/count is deliberately OMITTED. It's a bare win count
+        // with no games-played denominator, and the editor repeatedly inflated it into
+        // a record it doesn't support ("3-for-3", "the only player to win", "night-high
+        // 3 wins"). top_performer (by avg +/-) carries the "who led" hook safely.
+        // undefeated_player is pruned when null (it only fires on a 3+ game sweep).
+        tonight = {
+          games: b.total_games,
+          players: b.total_players,
+          total_points: b.total_points,
+          closest_game: b.closest_game,
+          biggest_blowout: b.biggest_blowout,
+          top_performer: b.top_performer,
+          top_performer_avg_plus_minus: b.top_performer_avg_pm,
+          undefeated_player: b.undefeated_player,
+        }
+        break
+      case 'defensive_battle':
+      case 'shootout': {
+        // Attribute the winning side so the editor never assigns direction to a bare
+        // team1-team2 score. Higher score wins; equal is a tie.
+        const t1 = b.team1_score as number
+        const t2 = b.team2_score as number
+        const t1p = (b.team1_players as string[]) ?? []
+        const t2p = (b.team2_players as string[]) ?? []
+        let result: string
+        if (t1 === t2) {
+          result = `${t1p.join('/')} tied ${t2p.join('/')} ${t1}-${t2}`
+        } else {
+          const [winP, loseP, winS, loseS] = t1 > t2 ? [t1p, t2p, t1, t2] : [t2p, t1p, t2, t1]
+          result = `${winP.join('/')} beat ${loseP.join('/')} ${winS}-${loseS}`
+        }
+        tonight = { game_number: b.game_number, result, combined: b.combined }
+        break
+      }
+      case 'individual_streak':
+      case 'cold_streak':
+        // No rank: streak detectors carry an all-players rank, not the 5+-games
+        // leaderboard figure, so we omit it rather than print a non-portal number.
+        standing = { avg_plus_minus: b.avg_plus_minus }
+        tonight = { streak: b.streak, streak_margins: b.streak_margins }
+        break
+      case 'perfect_session':
+        standing = { avg_plus_minus: b.avg_plus_minus }
+        tonight = { result: `${b.games}-0`, win_margins: b.won_game_margins }
+        break
+      case 'veteran_milestone':
+        standing = {
+          career_record: `${b.wins}-${b.losses}`,
+          win_pct: pctWhole(b.win_pct as number | null),
+          avg_plus_minus: b.avg_plus_minus,
+        }
+        tonight = { milestone_game_reached: b.milestone }
+        break
+      default:
+        standing = { facts: c.headline_hint }
+    }
+
+    entries.push({ type: c.narrative_type, players, tonight: prune(tonight), standing: prune(standing) })
+  }
+  return entries
 }
 
 // ---------------------------------------------------------------------------
-// Claude API call
+// Consolidated editorial call — one forced-tool-use request to Opus 4.8.
 // ---------------------------------------------------------------------------
 
-async function generateNarrative(
-  candidate: EnrichedCandidate,
-  session: RawSession,
-  playerMap: Map<string, PlayerName>,
-): Promise<{ headline: string; body: string } | null> {
-  try {
-    const playerNames = candidate.player_ids
-      .map((id) => {
-        const p = playerMap.get(id)
-        return p ? displayName(p) : null
-      })
-      .filter((n): n is string => n !== null)
+const EMIT_EDITION_TOOL = {
+  name: 'emit_edition',
+  description:
+    'Emit the finished Rundown edition as structured data: an optional one-line standfirst, exactly one lead story, and zero or more secondary stories. This is the only way to return the edition.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      standfirst: {
+        type: 'string',
+        description: 'Optional one-line deck for the whole edition. Omit if nothing earns it.',
+      },
+      lead: {
+        type: 'object',
+        description: 'The single front-page story, chosen by newsworthiness.',
+        properties: {
+          type: {
+            type: 'string',
+            description: 'The candidate type this story is built from (e.g. hot_duo, rivalry, climber).',
+          },
+          headline: { type: 'string', description: 'Headline, 8 words max, no exclamation points.' },
+          body: { type: 'string', description: 'Lead body: 4-5 sentences. Let it breathe.' },
+        },
+        required: ['type', 'headline', 'body'],
+      },
+      secondaries: {
+        type: 'array',
+        description: 'Tighter supporting stories. Each covers a DIFFERENT player/storyline than the lead and each other.',
+        items: {
+          type: 'object',
+          properties: {
+            type: { type: 'string' },
+            headline: { type: 'string', description: 'Headline, 8 words max.' },
+            body: { type: 'string', description: 'Secondary body: 2 sentences max.' },
+          },
+          required: ['type', 'headline', 'body'],
+        },
+      },
+    },
+    required: ['lead', 'secondaries'],
+  },
+}
 
+const EDITORIAL_SYSTEM = `This is pickup basketball — informal, self-organized, no coaches, no refs. Teams are picked fresh every game; there are no permanent rosters. Someone built a real stats system for this group, so every number means more than it would casually.
+
+You are the EDITOR of "The Rundown," a post-run column in the tradition of Zach Lowe — sharp, specific, human, never purple. You are handed the full slate of candidate storylines from ONE night's run and you build ONE edition: pick the lead, write it, and add tight secondaries.
+
+CLARITY, SPECIFICITY, PUNCH: every sentence is immediately understood by someone who wasn't there; every sentence carries a concrete number or fact; write like Lowe texting about the game, not a literary essay.
+
+EDITORIAL JUDGMENT:
+- Pick the LEAD by newsworthiness and human interest, NOT by any ordering in the slate. A long near-even rivalry or an elite duo usually outranks a routine recap.
+- Lead body: 4-5 sentences, let it breathe. Secondary bodies: 2 sentences maximum.
+
+DEDUP (hard rule): the player who anchors the LEAD must NOT also anchor a secondary. If a secondary candidate centers on a lead player, fold its angle into the lead or drop it. Each player is the subject of at most ONE story (being named in a game's lineup doesn't count).
+
+LENGTH DISCIPLINE (hard rule): the number and length of stories must reflect how much GENUINELY happened tonight. Do NOT pad toward a story count by leaning on standing context (rivalry history, career records, ranks) — manufacturing volume is the same dishonesty as manufacturing drama. Let "Tonight's substance" set a CEILING on how many stories you may emit, then write FEWER than the ceiling whenever the genuine material runs out:
+  • games_tonight 3 or fewer → ceiling of 2 stories (often the lead alone is the honest edition).
+  • games_tonight 4 to 6 → ceiling of 3 stories.
+  • games_tonight 7 or more → ceiling of 4 stories.
+  • notable_tonight_event_count raises the ceiling by one (a milestone / perfect sweep / real upset makes even a low-game night read full).
+The ceiling is a maximum, never a target — a rivalry's career history, a returner's old record, and a numbers recap are NOT three nights' worth of news on a two-game night. A quieter night must therefore read VISIBLY shorter than a busier one, never the same length. This is judgment within the ceiling: weigh substance the way you weigh newsworthiness.
+
+HARD FACT RULES (violating these breaks the feature):
+- Each slate entry splits "tonight" facts from "standing" (all-time / context) facts. NEVER blur the two. A standing record is not a tonight event.
+- BANNED INFERENCE — duos: if a duo entry has tonight.teamed_up_tonight = false, you MUST NOT imply they played together, "reunited," "reconnected," or did anything "tonight." Their record together is STANDING context only — a season-long fact, never a tonight reunion.
+- BANNED INFERENCE — rankings: any rank in the slate is a STALE nightly snapshot. NEVER say tonight changed someone's rank or that they "climbed" tonight. State a current rank only as a standing fact.
+- BANNED INFERENCE — standing deltas: a standing total (series record, series margin, career W-L, games count) ALREADY reflects everything including tonight. Tonight's result does NOT move it. NEVER say a margin "is now down to," "narrows to," "cut to," "trims to one," or a record "improves to," "climbs to" because of tonight. Copy the margin/record from the slate field verbatim ("series_lead_margin": 2 means by two, full stop) — do not add or subtract tonight's game from it.
+- Use ONLY the numbers in the slate. Never invent, round, or extrapolate a stat.
+- ABSENCE IS NOT A FACT: state only what the slate contains. NEVER narrate the absence of something — no "nobody went undefeated," "no one swept," "nobody hit a milestone," "no ties tonight," "no blowouts," "the lone blowout." If a fact is not in an entry, it did not happen for you; say nothing about it.
+- NO ALL-TIME OR CROSS-FIELD SUPERLATIVES: a superlative ("closest," "biggest," "tightest," "highest," "lowest," "most," "longest-running") is allowed ONLY for tonight and ONLY when a slate field states it (a recap's biggest_blowout / closest_game, a defensive battle's lowest-scoring game). NEVER assert a career or all-time superlative — "their closest meeting ever," "tightest of 160 games," "first time in months," "lowest-scoring all year." And NEVER rank one slate entry against others that aren't there — "the longest-running feud in the group," "the group's best duo": you see ONE rivalry / ONE duo, not the field, so you cannot know it leads the group. The slate carries aggregate standing totals (e.g. a 79-81 series count) but NO per-game history and NO cross-pair comparison. Do not extrapolate a superlative from an aggregate.
+
+STYLE:
+- First names only. Always cite specific numbers. Headlines: 8 words max, no exclamation points. No clichés. No gendered language — use "players," "the group," or names; never "guys," "men," or "brothers."
+- Reference the run by day/date ("Wednesday's run," "on June 10th"), never a venue name.
+- Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show," "not just," "not only," "but also," "it is not X it is Y," and any abstract noun used where a concrete fact would be sharper.
+- NEVER use the internal words "slate," "candidate," "entry," or "standing" in the prose — those are your working terms, not the reader's. Write naturally ("the night's biggest gap," not "the slate's lone blowout").
+
+Return the edition ONLY via the emit_edition tool.`
+
+async function generateEdition(
+  slate: SlateEntry[],
+  substance: Substance,
+  session: RawSession,
+): Promise<{ lead: EditionStory; secondaries: EditionStory[] } | null> {
+  try {
     const runLabel = new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     })
-
-    const bd = candidate.body_data as Record<string, unknown>
-    const singleGameNote =
-      candidate.narrative_type === 'defensive_battle' || candidate.narrative_type === 'shootout'
-        ? `\nThis describes one specific game (Game ${bd.game_number as number}) within a session that had ${bd.total_games_in_session as number} games total — write about this game specifically, not the whole session.`
-        : ''
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1070,38 +1291,21 @@ async function generateNarrative(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 200,
-        system: `This is pickup basketball — informal, self-organized, no coaches, no refs. Players show up voluntarily on their own time, teams are picked fresh every game, and there are no permanent rosters. Someone built a real stats tracking system for this group, which means every number means more than it would in a casual setting — these players care enough to measure themselves. Write with awareness of that context: showing up consistently is an achievement, a win streak is hard because you play with different teammates every game, and climbing the rankings means something because everyone here is genuinely trying.
-
-You are a sports columnist in the tradition of Zach Lowe and Wright Thompson — you find the human story inside the numbers. Your writing has three qualities:
-
-1. CLARITY FIRST: Every sentence must be immediately understood by someone who wasn't at the run. No metaphors that require interpretation. If a sentence needs re-reading, rewrite it.
-
-2. SPECIFICITY: Every sentence contains a concrete detail. Never write "playing well" — write "won 6 of his last 7 and the one loss wasn't close."
-
-3. PUNCHY NOT POETIC: Write like Zach Lowe texting you about the game — sharp, confident, specific. Not like a literary essay. The insight should land immediately, not after reflection.
-
-Rules: use first names only, always reference specific numbers, two sentences maximum for body copy — if you cannot say it clearly in two sentences, say less not more, headline maximum 8 words, no exclamation points, no clichés. Never use gendered language. This group includes players of all genders. Use "players," "runners," "the group," or names — never "men," "guys," "brothers," or any gendered term.
-
-Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show," "mornings now look different," "borrowed quietly," "its own kind of," "that is its own," "not just," "not only," "but also," "it is not X it is Y," "that is not X that is Y," and any phrase that uses abstract nouns where concrete facts would work better.
-
-When referencing the session, use the day and date — "Wednesday's run," "last Thursday," "on May 29th" — never a venue name.
-
-Tone for this story: ${candidate.tone_used}
-Angle for this story: ${candidate.angle_used}
-Return ONLY valid JSON, no markdown, no backticks:
-  {"headline": "...", "body": "..."}`,
+        model: 'claude-opus-4-8',
+        max_tokens: 2500,
+        tool_choice: { type: 'tool', name: 'emit_edition' },
+        tools: [EMIT_EDITION_TOOL],
+        system: EDITORIAL_SYSTEM,
         messages: [
           {
             role: 'user',
-            content: `Write a ${candidate.angle_used} narrative.
-${candidate.previous_text ? `Previous version (do not repeat phrases or structure): "${candidate.previous_text}"` : ''}
-Key facts: ${candidate.headline_hint}
-Stats: ${JSON.stringify(candidate.body_data)}
-Players: ${playerNames.join(', ')}
-Run: ${runLabel}${singleGameNote}
-${getAngleInstruction(candidate.narrative_type)}`,
+            content: `Build the edition for ${runLabel}'s run.
+
+Tonight's substance (editorial guidance for SIZING the edition — NOT facts to print):
+${JSON.stringify(substance, null, 2)}
+
+Candidate slate (JSON). Each entry separates "tonight" facts from "standing"/all-time context — never blur the two. Every field here is a present, true fact; if something is not in an entry, it did not happen — do not narrate its absence:
+${JSON.stringify(slate, null, 2)}`,
           },
         ],
       }),
@@ -1109,21 +1313,28 @@ ${getAngleInstruction(candidate.narrative_type)}`,
 
     if (!response.ok) return null
 
-    const data = (await response.json()) as { content?: Array<{ text?: string }> }
-    const raw = data.content?.[0]?.text ?? ''
-    // Some responses wrap the JSON in markdown fences despite the "no backticks"
-    // instruction. Strip a leading ```json / ``` and a trailing ``` (and surrounding
-    // whitespace) so fenced output parses instead of being silently dropped.
-    const text = raw
-      .trim()
-      .replace(/^```(?:json)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim()
-    const parsed = JSON.parse(text) as { headline?: unknown; body?: unknown }
+    // Read structured data directly off the tool_use block — never JSON.parse of
+    // model text. A forced tool call cannot preamble or fence.
+    const data = (await response.json()) as {
+      content?: Array<{ type?: string; name?: string; input?: unknown }>
+    }
+    const tool = data.content?.find((bl) => bl.type === 'tool_use' && bl.name === 'emit_edition')
+    const input = tool?.input as { lead?: EditionStory; secondaries?: EditionStory[] } | undefined
 
-    if (typeof parsed.headline !== 'string' || typeof parsed.body !== 'string') return null
+    if (
+      !input ||
+      !input.lead ||
+      typeof input.lead.type !== 'string' ||
+      typeof input.lead.headline !== 'string' ||
+      typeof input.lead.body !== 'string'
+    ) {
+      return null
+    }
 
-    return { headline: parsed.headline, body: parsed.body }
+    return {
+      lead: input.lead,
+      secondaries: Array.isArray(input.secondaries) ? input.secondaries : [],
+    }
   } catch {
     return null
   }
@@ -1168,9 +1379,13 @@ export async function POST(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Phase 2 — fetch everything else in parallel
-    // -----------------------------------------------------------------------
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    // Phase 2 — fetch everything else in parallel.
+    // The rolling-form window is anchored to THIS session's date (not Date.now()):
+    // [session_date - 30d, session_date]. In production the session is current, so
+    // this matches the old "last 30 days" behavior; for regenerating an older
+    // edition it keeps streaks/returner/recap faithful to that run's era instead of
+    // bleeding in the group's current form.
+    const windowStart = new Date(new Date(session.session_date + 'T12:00:00').getTime() - 30 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split('T')[0]
 
@@ -1181,8 +1396,6 @@ export async function POST(request: Request) {
       teammateRes,
       opponentRes,
       gameStrengthRes,
-      anglesRes,
-      previousNarrativesRes,
     ] = await Promise.all([
       supabase
         .from('game_players')
@@ -1192,16 +1405,12 @@ export async function POST(request: Request) {
       supabase
         .from('player_game_log')
         .select('player_id,game_id,session_date,player_team,winning_team,plus_minus,is_win')
-        .gte('session_date', thirtyDaysAgo)
+        .gte('session_date', windowStart)
+        .lte('session_date', session.session_date)
         .order('session_date', { ascending: true }),
       supabase.from('teammate_stats').select('*'),
       supabase.from('opponent_stats').select('*'),
       supabase.from('game_team_strength').select('*').in('game_id', gameIds),
-      supabase.from('narrative_angles').select('*'),
-      supabase
-        .from('narratives')
-        .select('narrative_type, body, angle_used, tone_used')
-        .eq('session_id', session_id),
     ])
 
     const gamePlayers = (gamePlayersRes.data as unknown as RawGamePlayer[]) ?? []
@@ -1210,15 +1419,10 @@ export async function POST(request: Request) {
     const teammateStats = (teammateRes.data as unknown as TeammateStatRow[]) ?? []
     const opponentStats = (opponentRes.data as unknown as OpponentStatRow[]) ?? []
     const gameStrength = (gameStrengthRes.data as unknown as GameStrengthRow[]) ?? []
-    const angles = (anglesRes.data as unknown as NarrativeAngleRow[]) ?? []
-    const previousNarratives = (previousNarrativesRes.data as unknown as PreviousNarrativeRow[]) ?? []
 
     // -----------------------------------------------------------------------
     // Build lookup maps
     // -----------------------------------------------------------------------
-    const anglesMap = new Map(angles.map((a) => [a.narrative_type, a]))
-    const prevMap = new Map(previousNarratives.map((n) => [n.narrative_type, n]))
-
     const sessionPlayerIds = new Set(gamePlayers.map((gp) => gp.player_id))
     const sessionGameIds = new Set(gameIds)
 
@@ -1249,7 +1453,7 @@ export async function POST(request: Request) {
       () => detectDefensiveBattle(games, gamePlayers),
       () => detectShootout(games, gamePlayers),
       () => detectPerfectSession(gameLog, sessionGameIds, playerMap, playerStats),
-      () => detectReturner(sessionPlayerIds, gameLog, sessionGameIds, playerStats, playerMap),
+      () => detectReturner(sessionPlayerIds, gameLog, sessionGameIds, playerStats, playerMap, session.session_date),
     ]
 
     const candidates: NarrativeCandidate[] = []
@@ -1263,66 +1467,28 @@ export async function POST(request: Request) {
     }
 
     // -----------------------------------------------------------------------
-    // Sort by priority, deduplicate per player, select up to 8
+    // Consolidated editorial pass. Hand the whole candidate slate to ONE Opus
+    // 4.8 emit_edition call (forced tool-use). The editor picks the lead by
+    // newsworthiness, dedups overlapping players, and writes the full edition in
+    // one structured response — no priority sort, no per-player dedup, no
+    // per-story fan-out, no angle/tone rotation.
     // -----------------------------------------------------------------------
-    candidates.sort(
-      (a, b) => b.priority - a.priority || a.narrative_type.localeCompare(b.narrative_type),
-    )
+    const slate = buildSlate(candidates, playerMap)
 
-    // Keep only the highest-priority candidate for each player. Candidates
-    // with no player_ids (session_recap, upset, defensive_battle, shootout)
-    // are never blocked and never contribute to the seen set.
-    const seenPlayerIds = new Set<string>()
-    const deduplicated: NarrativeCandidate[] = []
-    for (const candidate of candidates) {
-      if (candidate.player_ids.length === 0) {
-        deduplicated.push(candidate)
-        continue
-      }
-      const hasOverlap = candidate.player_ids.some((id) => seenPlayerIds.has(id))
-      if (!hasOverlap) {
-        deduplicated.push(candidate)
-        candidate.player_ids.forEach((id) => seenPlayerIds.add(id))
-      }
+    // Substance signal — how much GENUINELY happened tonight, so the editor sizes
+    // the edition to the night. Only elevating events (a milestone, a perfect sweep,
+    // a real upset) make a low-game night read full; routine rivalries / returns /
+    // recaps / ranks are standing-flavored content, not events.
+    const ELEVATING_EVENT_TYPES = new Set(['perfect_session', 'veteran_milestone', 'upset'])
+    const notableTonightEvents = candidates
+      .filter((c) => ELEVATING_EVENT_TYPES.has(c.narrative_type))
+      .map((c) => c.narrative_type)
+    const substance: Substance = {
+      games_tonight: games.length,
+      notable_tonight_event_count: notableTonightEvents.length,
+      notable_tonight_events: notableTonightEvents,
     }
 
-    const selected = deduplicated.slice(0, 8)
-    const hasRecap = selected.some((c) => c.narrative_type === 'session_recap')
-    if (!hasRecap) {
-      const recap = deduplicated.find((c) => c.narrative_type === 'session_recap')
-      if (recap) {
-        if (selected.length >= 8) {
-          selected[7] = recap
-        } else {
-          selected.push(recap)
-        }
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // Determine angle and tone rotation for each selected candidate
-    // -----------------------------------------------------------------------
-    const enriched: EnrichedCandidate[] = selected.map((candidate) => {
-      const angleRow = anglesMap.get(candidate.narrative_type)
-      const prev = prevMap.get(candidate.narrative_type)
-      return {
-        ...candidate,
-        previous_text: prev?.body,
-        angle_used: nextAngle(candidate.angle_options, angleRow?.last_angle ?? null),
-        tone_used: TONES[Math.floor(Math.random() * TONES.length)],
-      }
-    })
-
-    // -----------------------------------------------------------------------
-    // Generate prose in parallel via Claude API (partial failure OK)
-    // -----------------------------------------------------------------------
-    const results = await Promise.allSettled(
-      enriched.map((candidate) => generateNarrative(candidate, session, playerMap)),
-    )
-
-    // -----------------------------------------------------------------------
-    // Build narratives to insert
-    // -----------------------------------------------------------------------
     interface NarrativeInsert {
       session_id: string
       narrative_type: string
@@ -1337,46 +1503,45 @@ export async function POST(request: Request) {
     }
 
     const narrativesToInsert: NarrativeInsert[] = []
-    let isFirst = true
 
-    for (let i = 0; i < enriched.length; i++) {
-      const result = results[i]
-      if (result.status === 'fulfilled' && result.value) {
-        narrativesToInsert.push({
-          session_id,
-          narrative_type: enriched[i].narrative_type,
-          angle_used: enriched[i].angle_used,
-          tone_used: enriched[i].tone_used,
-          headline: result.value.headline,
-          body: result.value.body,
-          is_lead: isFirst,
-          priority: enriched[i].priority,
-          player_ids: enriched[i].player_ids,
-          raw_data: enriched[i].body_data,
+    if (slate.length > 0) {
+      const edition = await generateEdition(slate, substance, session)
+      if (edition) {
+        // Map each story's type back to the candidate that produced it, so the
+        // box score / OG avatars / leaderboard links keep their player_ids and
+        // raw facts. (Each narrative_type appears at most once among candidates.)
+        const byType = new Map(candidates.map((c) => [c.narrative_type, c]))
+        const stories = [
+          { ...edition.lead, is_lead: true },
+          ...edition.secondaries.map((s) => ({ ...s, is_lead: false })),
+        ]
+        stories.forEach((story, idx) => {
+          if (typeof story.headline !== 'string' || typeof story.body !== 'string') return
+          const src = byType.get(story.type)
+          narrativesToInsert.push({
+            session_id,
+            narrative_type: story.type,
+            angle_used: 'editorial',
+            tone_used: 'editorial',
+            headline: story.headline,
+            body: story.body,
+            is_lead: story.is_lead,
+            priority: 100 - idx, // preserve the editor's chosen order (lead first)
+            player_ids: src?.player_ids ?? [],
+            raw_data: src?.body_data ?? {},
+          })
         })
-        isFirst = false
       }
     }
 
     // -----------------------------------------------------------------------
-    // Write to Supabase
+    // Write to Supabase. Only replace the edition when we actually have stories
+    // — a failed/empty editorial call writes nothing and leaves any existing
+    // narratives untouched (never wipe a good edition on a transient failure).
     // -----------------------------------------------------------------------
-    await supabaseAdmin.from('narratives').delete().eq('session_id', session_id)
-
     if (narrativesToInsert.length > 0) {
+      await supabaseAdmin.from('narratives').delete().eq('session_id', session_id)
       await supabaseAdmin.from('narratives').insert(narrativesToInsert)
-    }
-
-    // Update angle rotation tracking
-    for (const narrative of enriched) {
-      await supabaseAdmin
-        .from('narrative_angles')
-        .update({
-          last_angle: narrative.angle_used,
-          last_tone: narrative.tone_used,
-          last_used_at: new Date().toISOString(),
-        })
-        .eq('narrative_type', narrative.narrative_type)
     }
 
     return NextResponse.json(
