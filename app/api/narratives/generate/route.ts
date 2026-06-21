@@ -1031,6 +1031,15 @@ interface Substance {
   notable_tonight_events: string[]
 }
 
+// What led the last one or two editions — handed to the editor as a FRESHNESS
+// tie-breaker (not facts to print, not a ban). Subjects are resolved names, never
+// UUIDs. editions_ago: 1 = the most recent prior edition.
+interface RecentLead {
+  editions_ago: number
+  type: string
+  subjects: string[]
+}
+
 function pct(p: number): string {
   return '.' + Math.round(p * 1000).toString().padStart(3, '0')
 }
@@ -1267,6 +1276,7 @@ CLARITY, SPECIFICITY, PUNCH: every sentence is immediately understood by someone
 
 EDITORIAL JUDGMENT:
 - Pick the LEAD by newsworthiness and human interest, NOT by any ordering in the slate. A long near-even rivalry or an elite duo usually outranks a routine recap.
+- LEAD FRESHNESS: when present, you are told what led the last one or two editions (each as a type + its subject players). Freshness is a TIE-BREAKER, not a ban. When tonight's strongest candidates are close in newsworthiness, prefer a lead whose storyline OR subject players differ from what recently led, so the column doesn't open on the same story two runs running. A storyline that led recently should yield to a fresh one UNLESS tonight genuinely escalated it — a milestone reached, a record or streak broken, a result that materially moved the all-time standing (a tied series cracked open, a series lead changing hands, a new high). If a recurring story is honestly tonight's biggest news, it STILL leads — but say plainly what changed tonight to earn it again, don't just retell the standing rivalry. Never demote a genuinely bigger story to a weaker, fresher one just to avoid repetition; freshness breaks ties, it never overrides newsworthiness.
 - Lead body: 4-5 sentences, let it breathe. Secondary bodies: 2 sentences maximum.
 
 DEDUP (hard rule): the player who anchors the LEAD must NOT also anchor a secondary. If a secondary candidate centers on a lead player, fold its angle into the lead or drop it. Each player is the subject of at most ONE story (being named in a game's lineup doesn't count).
@@ -1370,6 +1380,7 @@ async function callEditorialModel(
   slate: SlateEntry[],
   substance: Substance,
   session: RawSession,
+  recentLeads: RecentLead[],
 ): Promise<ContentBlock[] | null> {
   try {
     const runLabel = new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', {
@@ -1396,7 +1407,14 @@ async function callEditorialModel(
 
 Tonight's substance (editorial guidance for SIZING the edition — NOT facts to print):
 ${JSON.stringify(substance, null, 2)}
-
+${
+  recentLeads.length > 0
+    ? `
+Recent leads (what led the last editions — a LEAD-FRESHNESS tie-breaker, NOT facts to print and NOT a ban; see LEAD FRESHNESS):
+${JSON.stringify(recentLeads, null, 2)}
+`
+    : ''
+}
 Candidate slate (JSON). Each entry separates "tonight" facts from "standing"/all-time context — never blur the two. Every field here is a present, true fact; if something is not in an entry, it did not happen — do not narrate its absence:
 ${JSON.stringify(slate, null, 2)}`,
           },
@@ -1421,10 +1439,11 @@ async function generateEdition(
   slate: SlateEntry[],
   substance: Substance,
   session: RawSession,
+  recentLeads: RecentLead[],
 ): Promise<{ lead: EditionStory; secondaries: EditionStory[] } | null> {
   const MAX_ATTEMPTS = 3
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const content = await callEditorialModel(slate, substance, session)
+    const content = await callEditorialModel(slate, substance, session, recentLeads)
     const parsed = parseEditionFromContent(content ?? undefined)
     if (parsed) {
       if (attempt > 1) console.warn(`[rundown] editorial parsed OK on attempt ${attempt}/${MAX_ATTEMPTS}`)
@@ -1525,6 +1544,7 @@ export async function POST(request: Request) {
       teammateRes,
       opponentRes,
       gameStrengthRes,
+      recentLeadsRes,
     ] = await Promise.all([
       supabase
         .from('game_players')
@@ -1540,6 +1560,18 @@ export async function POST(request: Request) {
       supabase.from('teammate_stats').select('*'),
       supabase.from('opponent_stats').select('*'),
       supabase.from('game_team_strength').select('*').in('game_id', gameIds),
+      // Recent prior leads, for the LEAD-FRESHNESS tie-breaker. Anchored to this
+      // session's date (Phase 3b principle): only editions BEFORE tonight, never this
+      // session's own prior generation. PostgREST can't order a parent table by an
+      // embedded column, so fetch a bounded recent set and sort by session_date in JS.
+      supabase
+        .from('narratives')
+        .select('narrative_type, player_ids, sessions!inner(session_date)')
+        .eq('is_lead', true)
+        .neq('session_id', session_id)
+        .lt('sessions.session_date', session.session_date)
+        .order('created_at', { ascending: false })
+        .limit(8),
     ])
 
     const gamePlayers = (gamePlayersRes.data as unknown as RawGamePlayer[]) ?? []
@@ -1566,6 +1598,28 @@ export async function POST(request: Request) {
         playerMap.set(ps.player_id, { name: ps.name, nickname: ps.nickname })
       }
     })
+
+    // Resolve the last 1-2 prior leads into editor-facing context (type + subject
+    // NAMES, never UUIDs). Sort by the embedded session_date desc (the fetch was only
+    // bounded, not ordered, by recency) and keep the two most recent. playerStats
+    // covers every historical player, so playerMap resolves subjects from past editions.
+    interface RecentLeadRow {
+      narrative_type: string
+      player_ids: string[]
+      sessions: { session_date: string }
+    }
+    const recentLeads: RecentLead[] = ((recentLeadsRes.data as unknown as RecentLeadRow[]) ?? [])
+      .slice()
+      .sort((a, b) => b.sessions.session_date.localeCompare(a.sessions.session_date))
+      .slice(0, 2)
+      .map((r, i) => ({
+        editions_ago: i + 1,
+        type: r.narrative_type,
+        subjects: (r.player_ids ?? []).map((id) => {
+          const p = playerMap.get(id)
+          return p ? displayName(p) : id
+        }),
+      }))
 
     // -----------------------------------------------------------------------
     // Run all 12 pattern detectors (each wrapped in try/catch)
@@ -1644,7 +1698,7 @@ export async function POST(request: Request) {
       // Reliability guard: if all editorial attempts malform, fall back to a plain
       // slate-built recap rather than writing nothing — an empty Rundown is the worst
       // failure mode for a "read it right after the run" feature.
-      let edition = await generateEdition(slate, substance, session)
+      let edition = await generateEdition(slate, substance, session, recentLeads)
       if (!edition) {
         edition = buildFallbackEdition(candidates, playerMap)
         if (edition) {
