@@ -573,67 +573,226 @@ function detectClimber(
 }
 
 // ---------------------------------------------------------------------------
-// Pattern detector: veteran_milestone
+// Pattern detector: milestones (live crossings, session-date anchor, NO snapshot)
+//
+// Replaces the retired veteran_milestone detector, which fired on
+// games_played === m — a CURRENT-TOTAL check that misfires when regenerating an
+// older edition (it reads today's total, not the total as of that night). Every
+// milestone here is a GENUINE tonight-crossing computed from the player's full game
+// history: before = games STRICTLY before tonight (session_date < tonight), after =
+// before + tonight's games (session_id === tonight). A milestone fires only when
+// before < threshold && after >= threshold, so a player long past a threshold never
+// re-fires it. One candidate per player; co-occurring milestones (e.g. 200th game
+// AND 100th win) fold into that single candidate. Milestones key on player_id, never
+// name (guards the duplicate-name records).
 // ---------------------------------------------------------------------------
 
-const MILESTONE_PRIORITIES: Record<number, number> = {
-  100: 60,
-  75: 60,
-  50: 60,
-  25: 45,
-  10: 35,
+// Minimal per-game history row for milestone math (one row per player per game,
+// the player's full career up to and including tonight, globally ordered).
+interface MilestoneHistoryRow {
+  player_id: string
+  session_id: string
+  session_date: string
+  game_number: number
+  is_win: boolean
+  winning_team: number | null
 }
 
-function detectVeteranMilestone(
+const GAME_COUNT_TIERS = [150, 200, 250, 300, 500, 1000]
+const WIN_COUNT_TIERS = [50, 100, 250, 500]
+const ATTENDANCE_TIERS = [100, 200]
+const PB_STREAK_MIN = 5            // a new personal-best win streak only fires at >= 5
+const ANNIVERSARY_WINDOW_DAYS = 90 // first session within 90d on/after the N-year mark
+
+type MilestoneTier = 'marquee' | 'notable' | 'minor'
+
+interface MilestoneHit {
+  kind: 'game_count' | 'win_count' | 'attendance' | 'personal_best_streak' | 'anniversary'
+  tier: MilestoneTier
+  label: string                    // editor-facing, e.g. "500th career game"
+  before?: number                  // count coming into tonight
+  after?: number                   // count after tonight
+  threshold?: number
+  detail?: string                  // extra context, e.g. "first played 2021-06-10"
+}
+
+function tierRank(t: MilestoneTier): number {
+  return t === 'marquee' ? 3 : t === 'notable' ? 2 : 1
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+// YYYY-MM-DD + n years, preserving month/day (UTC so no TZ drift). Feb-29 firsts roll
+// to Mar-01 in non-leap years, which is fine for an anniversary window.
+function addYears(isoDate: string, n: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y + n, m - 1, d)).toISOString().slice(0, 10)
+}
+
+function daysBetween(aIso: string, bIso: string): number {
+  return Math.round(
+    (new Date(aIso + 'T12:00:00Z').getTime() - new Date(bIso + 'T12:00:00Z').getTime()) / 86400000,
+  )
+}
+
+function detectMilestones(
   sessionPlayerIds: Set<string>,
+  history: MilestoneHistoryRow[], // ALL rows for session players, session_date <= tonight
+  session: RawSession,
   playerStats: PlayerStatsFull[],
   playerMap: Map<string, PlayerName>,
-): NarrativeCandidate | null {
-  const milestones = [100, 75, 50, 25, 10]
+  sessionOrderKey: Map<string, string>, // session_id → chronological sort key
+): NarrativeCandidate[] {
+  const tonightSession = session.id
+  const tonightDate = session.session_date
+  // Tonight's place in the session chronology. "before" = sessions strictly earlier
+  // than this key (which correctly INCLUDES an earlier session on the same day);
+  // tonight's own rows share this key and are excluded from before by the strict <.
+  const tonightKey = sessionOrderKey.get(tonightSession) ?? `${session.session_date}#~`
+  const keyOf = (r: MilestoneHistoryRow): string => sessionOrderKey.get(r.session_id) ?? r.session_date
 
-  let best: { playerId: string; milestone: number; priority: number } | null = null
+  // Group history by player, then sort each player's rows by TRUE session chronology
+  // (order key, then game_number) — game_number alone interleaves two same-day sessions.
+  const byPlayer = new Map<string, MilestoneHistoryRow[]>()
+  for (const r of history) {
+    if (!sessionPlayerIds.has(r.player_id)) continue
+    const arr = byPlayer.get(r.player_id) ?? []
+    arr.push(r)
+    byPlayer.set(r.player_id, arr)
+  }
+  for (const arr of Array.from(byPlayer.values())) {
+    arr.sort((a, b) => {
+      const ka = keyOf(a), kb = keyOf(b)
+      return ka === kb ? a.game_number - b.game_number : ka < kb ? -1 : 1
+    })
+  }
 
-  for (const ps of playerStats) {
-    if (!sessionPlayerIds.has(ps.player_id)) continue
-    for (const m of milestones) {
-      if (ps.games_played === m) {
-        const priority = MILESTONE_PRIORITIES[m] ?? 35
-        if (!best || priority > best.priority) {
-          best = { playerId: ps.player_id, milestone: m, priority }
+  const statsById = new Map(playerStats.map((ps) => [ps.player_id, ps]))
+  const out: NarrativeCandidate[] = []
+
+  for (const [playerId, rows] of Array.from(byPlayer.entries())) {
+    const before = rows.filter((r) => keyOf(r) < tonightKey)
+    const tonight = rows.filter((r) => r.session_id === tonightSession)
+    if (tonight.length === 0) continue // no games tonight (shouldn't happen for a session player)
+
+    const hits: MilestoneHit[] = []
+
+    // --- game-count ---
+    const beforeGames = before.length
+    const afterGames = beforeGames + tonight.length
+    for (const T of GAME_COUNT_TIERS) {
+      if (beforeGames < T && afterGames >= T) {
+        hits.push({
+          kind: 'game_count', threshold: T, before: beforeGames, after: afterGames,
+          tier: T === 1000 ? 'marquee' : T === 500 ? 'notable' : 'minor',
+          label: `${ordinal(T)} career game`,
+        })
+      }
+    }
+
+    // --- win-count (ties are not wins) ---
+    const beforeWins = before.filter((r) => r.is_win === true).length
+    const afterWins = beforeWins + tonight.filter((r) => r.is_win === true).length
+    for (const T of WIN_COUNT_TIERS) {
+      if (beforeWins < T && afterWins >= T) {
+        hits.push({
+          kind: 'win_count', threshold: T, before: beforeWins, after: afterWins,
+          tier: T >= 250 ? 'notable' : 'minor',
+          label: `${ordinal(T)} career win`,
+        })
+      }
+    }
+
+    // --- attendance (distinct sessions, not games) ---
+    const beforeSessions = new Set(before.map((r) => r.session_id)).size
+    const afterSessions = beforeSessions + 1 // tonight is one new, strictly-later session
+    for (const T of ATTENDANCE_TIERS) {
+      if (beforeSessions < T && afterSessions >= T) {
+        hits.push({
+          kind: 'attendance', threshold: T, before: beforeSessions, after: afterSessions,
+          tier: 'notable',
+          label: `${ordinal(T)} session with the group`,
+        })
+      }
+    }
+
+    // --- personal-best win streak (ties NEUTRAL, gate >= PB_STREAK_MIN) ---
+    // Streaks span sessions. Tie (winning_team null) neither extends nor breaks the run.
+    const streakStep = (running: number, r: MilestoneHistoryRow): number => {
+      if (r.winning_team === null) return running          // tie → neutral
+      return r.is_win === true ? running + 1 : 0            // win → +1, loss → reset
+    }
+    let priorMax = 0, runBefore = 0
+    for (const r of before) { runBefore = streakStep(runBefore, r); if (runBefore > priorMax) priorMax = runBefore }
+    let running = runBefore, newMax = priorMax, beatenTonight = false
+    for (const r of tonight) {
+      running = streakStep(running, r)
+      if (running > newMax) newMax = running
+      if (running > priorMax) beatenTonight = true
+    }
+    if (beatenTonight && newMax >= PB_STREAK_MIN) {
+      hits.push({
+        kind: 'personal_best_streak', before: priorMax, after: newMax,
+        tier: 'minor',
+        label: `personal-best ${newMax}-game win streak`,
+        detail: priorMax > 0 ? `previous best ${priorMax}` : undefined,
+      })
+    }
+
+    // --- anniversary (windowed; highest qualifying N only) ---
+    // first game ever = earliest row (history reaches back to the first game). Fire the
+    // first session at/after the N-year mark, within 90 days, where the player's prior
+    // session was still before the mark (genuine crossing). Highest N only → no stacking.
+    const firstDate = rows[0].session_date
+    const prevSessionDate = before.length > 0 ? before[before.length - 1].session_date : null
+    if (prevSessionDate) {
+      for (let N = 7; N >= 1; N--) {
+        const anniv = addYears(firstDate, N)
+        if (tonightDate >= anniv && prevSessionDate < anniv && daysBetween(tonightDate, anniv) <= ANNIVERSARY_WINDOW_DAYS) {
+          hits.push({
+            kind: 'anniversary', threshold: N,
+            tier: N >= 5 ? 'notable' : 'minor',
+            label: `${N}-year anniversary with the group`,
+            detail: `first played ${firstDate}`,
+          })
+          break
         }
       }
     }
+
+    if (hits.length === 0) continue
+
+    // One candidate per player; fold all hits, marquee-first; tier = highest hit.
+    hits.sort((a, b) => tierRank(b.tier) - tierRank(a.tier))
+    const topTier = hits[0].tier
+    const p = playerMap.get(playerId)
+    if (!p) continue
+    const ps = statsById.get(playerId)
+    const priority = topTier === 'marquee' ? 95 : topTier === 'notable' ? 65 : 40
+
+    out.push({
+      narrative_type: 'milestone',
+      headline_hint: `${displayName(p)} reached ${hits.map((h) => h.label).join(' and ')}`,
+      body_data: {
+        player_id: playerId,
+        tier: topTier,
+        milestones: hits,
+        career_wins: ps?.wins ?? null,
+        career_losses: ps?.losses ?? null,
+        win_pct: ps && ps.games_played > 0 ? Math.round((ps.wins / ps.games_played) * 100) / 100 : null,
+        avg_plus_minus: ps?.avg_plus_minus ?? null,
+      },
+      player_ids: [playerId],
+      priority,
+      angle_options: ['milestone', 'longevity', 'dedication', 'veteran', 'journey'],
+    })
   }
 
-  if (!best) return null
-
-  const p = playerMap.get(best.playerId)
-  if (!p) return null
-
-  const psEntry = playerStats.find((ps) => ps.player_id === best!.playerId)
-  const withStats = playerStats.filter((ps) => ps.avg_plus_minus !== null && ps.games_played > 0)
-  const groupAvgPM = withStats.length > 0
-    ? Math.round((withStats.reduce((s, ps) => s + (ps.avg_plus_minus ?? 0), 0) / withStats.length) * 10) / 10
-    : null
-
-  return {
-    narrative_type: 'veteran_milestone',
-    headline_hint: `${displayName(p)} played their ${best.milestone}th game today`,
-    body_data: {
-      player_id: best.playerId,
-      milestone: best.milestone,
-      wins: psEntry?.wins ?? null,
-      losses: psEntry?.losses ?? null,
-      avg_plus_minus: psEntry?.avg_plus_minus ?? null,
-      win_pct: psEntry && psEntry.games_played > 0
-        ? Math.round((psEntry.wins / psEntry.games_played) * 100) / 100
-        : null,
-      group_avg_plus_minus: groupAvgPM,
-    },
-    player_ids: [best.playerId],
-    priority: best.priority,
-    angle_options: ['milestone', 'longevity', 'dedication', 'veteran', 'journey'],
-  }
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -1029,6 +1188,9 @@ interface Substance {
   games_tonight: number
   notable_tonight_event_count: number
   notable_tonight_events: string[]
+  // Present only when a marquee milestone (e.g. a 1000th career game) was crossed
+  // tonight — an explicit, NON-printable signal that this is lead-worthy news.
+  marquee_milestone?: string
 }
 
 function pct(p: number): string {
@@ -1196,14 +1358,28 @@ function buildSlate(
         standing = { avg_plus_minus: b.avg_plus_minus }
         tonight = { result: `${b.games}-0`, win_margins: b.won_game_margins }
         break
-      case 'veteran_milestone':
+      case 'milestone': {
+        // Each crossing stated with its "coming into tonight" count so the editor can
+        // never read it as a current total. Counted milestones show before→after;
+        // streak/anniversary carry their own phrasing.
+        const hits = (b.milestones as MilestoneHit[]) ?? []
+        const reached = hits.map((h) => {
+          if (h.kind === 'game_count' || h.kind === 'win_count' || h.kind === 'attendance') {
+            return `${h.label} — ${h.before} coming into tonight, ${h.after} after`
+          }
+          return h.detail ? `${h.label} (${h.detail})` : h.label
+        })
+        tonight = { milestones_reached_tonight: reached }
         standing = {
-          career_record: `${b.wins}-${b.losses}`,
+          career_record:
+            b.career_wins !== null && b.career_losses !== null
+              ? `${b.career_wins}-${b.career_losses}`
+              : null,
           win_pct: pctWhole(b.win_pct as number | null),
           avg_plus_minus: b.avg_plus_minus,
         }
-        tonight = { milestone_game_reached: b.milestone }
         break
+      }
       default:
         standing = { facts: c.headline_hint }
     }
@@ -1269,7 +1445,9 @@ EDITORIAL JUDGMENT:
 - Pick the LEAD by newsworthiness and human interest, NOT by any ordering in the slate. A long near-even rivalry or an elite duo usually outranks a routine recap.
 - Lead body: 4-5 sentences, let it breathe. Secondary bodies: 2 sentences maximum.
 
-DEDUP (hard rule): the player who anchors the LEAD must NOT also anchor a secondary. If a secondary candidate centers on a lead player, fold its angle into the lead or drop it. Each player is the subject of at most ONE story (being named in a game's lineup doesn't count).
+MILESTONES: some slate entries (type "milestone") are milestones CROSSED this run — a career-game or career-win count, a session-attendance count, a years-since-first-game anniversary, or a personal-best win streak. Always give a milestone story the type "milestone". Each is a genuine tonight crossing: state it using the "coming into tonight" count ("his 500th game, with 496 in the bank before tip-off"), NEVER as a current total and NEVER as something reached on an earlier night. If "Tonight's substance" flags a marquee milestone (e.g. a 1000th career game), that is rare, lead-worthy news and should usually TAKE THE LEAD over a standing rivalry or duo — it is exactly the fresh event that outranks the evergreen. Lesser milestones are strong secondaries, or the lead on a quiet night. When one player reached more than one milestone tonight, tell them as ONE story ("his 200th game and 100th win on the same night").
+
+DEDUP (hard rule): the player who anchors the LEAD must NOT also anchor a secondary. If a secondary candidate centers on a lead player, fold its angle into the lead or drop it. Each player is the subject of at most ONE story (being named in a game's lineup doesn't count). This holds ACROSS story types: if a player both crossed a milestone and is half of a rivalry (or any two storylines), they still get ONE story — fold the milestone into it or pick the stronger angle, never two stories for the same person.
 
 LENGTH DISCIPLINE (hard rule): the number and length of stories must reflect how much GENUINELY happened tonight. Do NOT pad toward a story count by leaning on standing context (rivalry history, career records, ranks) — manufacturing volume is the same dishonesty as manufacturing drama. Let "Tonight's substance" set a CEILING on how many stories you may emit, then write FEWER than the ceiling whenever the genuine material runs out:
   • games_tonight 3 or fewer → ceiling of 2 stories (often the lead alone is the honest edition).
@@ -1300,7 +1478,7 @@ type ContentBlock = { type?: string; name?: string; input?: unknown }
 
 const KNOWN_TYPES = [
   'hot_duo', 'individual_streak', 'cold_streak', 'rivalry', 'upset', 'climber',
-  'veteran_milestone', 'session_recap', 'defensive_battle', 'shootout',
+  'milestone', 'session_recap', 'defensive_battle', 'shootout',
   'perfect_session', 'returner',
 ]
 
@@ -1525,6 +1703,7 @@ export async function POST(request: Request) {
       teammateRes,
       opponentRes,
       gameStrengthRes,
+      sessionsOrderRes,
     ] = await Promise.all([
       supabase
         .from('game_players')
@@ -1540,6 +1719,10 @@ export async function POST(request: Request) {
       supabase.from('teammate_stats').select('*'),
       supabase.from('opponent_stats').select('*'),
       supabase.from('game_team_strength').select('*').in('game_id', gameIds),
+      // Session chronology for milestone before/after. session_date alone can't order
+      // two sessions on the SAME day (a double-header), so we order by (date, created_at)
+      // — this puts an earlier same-day session correctly into a later one's "before".
+      supabase.from('sessions').select('id,session_date,created_at'),
     ])
 
     const gamePlayers = (gamePlayersRes.data as unknown as RawGamePlayer[]) ?? []
@@ -1548,6 +1731,13 @@ export async function POST(request: Request) {
     const teammateStats = (teammateRes.data as unknown as TeammateStatRow[]) ?? []
     const opponentStats = (opponentRes.data as unknown as OpponentStatRow[]) ?? []
     const gameStrength = (gameStrengthRes.data as unknown as GameStrengthRow[]) ?? []
+
+    // session_id → chronological sort key (date, then created_at, then id for total
+    // determinism). Lets milestones order "before" by true session chronology.
+    const sessionsOrderRows = (sessionsOrderRes.data as unknown as { id: string; session_date: string; created_at: string }[]) ?? []
+    const sessionOrderKey = new Map<string, string>(
+      sessionsOrderRows.map((s) => [s.id, `${s.session_date}#${s.created_at}#${s.id}`]),
+    )
 
     // -----------------------------------------------------------------------
     // Build lookup maps
@@ -1568,7 +1758,32 @@ export async function POST(request: Request) {
     })
 
     // -----------------------------------------------------------------------
-    // Run all 12 pattern detectors (each wrapped in try/catch)
+    // Milestone history — the FULL career game log for tonight's players up to and
+    // including this session's date (NOT the 30-day form window). Needed for genuine
+    // before/after milestone crossings (game/win counts, attendance, streaks,
+    // first-game anniversary). Paged: PostgREST caps at 1000 rows and a single veteran
+    // (Colin ~1650 games) exceeds that. Ordered deterministically so paging is stable.
+    // -----------------------------------------------------------------------
+    const sessionPlayerIdList = Array.from(sessionPlayerIds)
+    const milestoneHistory: MilestoneHistoryRow[] = []
+    for (let from = 0; sessionPlayerIdList.length > 0; from += 1000) {
+      const { data, error } = await supabase
+        .from('player_game_log')
+        .select('player_id,session_id,session_date,game_number,is_win,winning_team,game_id')
+        .in('player_id', sessionPlayerIdList)
+        .lte('session_date', session.session_date)
+        .order('player_id', { ascending: true })
+        .order('session_date', { ascending: true })
+        .order('game_number', { ascending: true })
+        .order('game_id', { ascending: true })
+        .range(from, from + 999)
+      if (error || !data) break
+      milestoneHistory.push(...(data as unknown as MilestoneHistoryRow[]))
+      if (data.length < 1000) break
+    }
+
+    // -----------------------------------------------------------------------
+    // Run all pattern detectors (each wrapped in try/catch)
     // -----------------------------------------------------------------------
     const detectors: Array<() => NarrativeCandidate | null> = [
       () => detectHotDuo(sessionPlayerIds, teammateStats, playerMap, playerStats, gamePlayers, games),
@@ -1577,7 +1792,6 @@ export async function POST(request: Request) {
       () => detectRivalry(sessionPlayerIds, opponentStats, playerMap, playerStats, gamePlayers, games),
       () => detectUpset(gameStrength, games),
       () => detectClimber(sessionPlayerIds, playerStats, gameLog, sessionGameIds, playerMap),
-      () => detectVeteranMilestone(sessionPlayerIds, playerStats, playerMap),
       () => detectSessionRecap(games, gamePlayers, gameLog, sessionGameIds, playerStats, playerMap),
       () => detectDefensiveBattle(games, gamePlayers),
       () => detectShootout(games, gamePlayers),
@@ -1595,6 +1809,16 @@ export async function POST(request: Request) {
       }
     }
 
+    // Milestones run separately — the only detector that can emit MULTIPLE candidates
+    // (one per player who crossed a threshold tonight).
+    try {
+      candidates.push(
+        ...detectMilestones(sessionPlayerIds, milestoneHistory, session, playerStats, playerMap, sessionOrderKey),
+      )
+    } catch {
+      // Non-blocking
+    }
+
     // -----------------------------------------------------------------------
     // Consolidated editorial pass. Hand a substance-capped candidate slate to ONE
     // Opus 4.8 emit_edition call (forced tool-use). The editor picks the lead by
@@ -1606,14 +1830,28 @@ export async function POST(request: Request) {
     // Substance signal — how much GENUINELY happened tonight. Only elevating events
     // (a milestone, a perfect sweep, a real upset) make a low-game night read full;
     // routine rivalries / returns / recaps / ranks are content, not events.
-    const ELEVATING_EVENT_TYPES = new Set(['perfect_session', 'veteran_milestone', 'upset'])
+    const ELEVATING_EVENT_TYPES = new Set(['perfect_session', 'milestone', 'upset'])
     const notableTonightEvents = candidates
       .filter((c) => ELEVATING_EVENT_TYPES.has(c.narrative_type))
       .map((c) => c.narrative_type)
+
+    // Explicit, non-printable lead signal for a marquee milestone (e.g. a 1000th game).
+    const marqueeCand = candidates.find(
+      (c) => c.narrative_type === 'milestone' && (c.body_data as { tier?: string }).tier === 'marquee',
+    )
+    let marqueeMilestone: string | undefined
+    if (marqueeCand) {
+      const bd = marqueeCand.body_data as { player_id?: string; milestones?: MilestoneHit[] }
+      const p = bd.player_id ? playerMap.get(bd.player_id) : undefined
+      const label = bd.milestones?.[0]?.label
+      if (p && label) marqueeMilestone = `${displayName(p)} reached their ${label} tonight`
+    }
+
     const substance: Substance = {
       games_tonight: games.length,
       notable_tonight_event_count: notableTonightEvents.length,
       notable_tonight_events: notableTonightEvents,
+      ...(marqueeMilestone ? { marquee_milestone: marqueeMilestone } : {}),
     }
 
     // Structural length control (applied to the editor's OUTPUT, below — NOT to its
@@ -1654,8 +1892,30 @@ export async function POST(request: Request) {
       if (edition) {
         // Map each story's type back to the candidate that produced it, so the
         // box score / OG avatars / leaderboard links keep their player_ids and
-        // raw facts. (Each narrative_type appears at most once among candidates.)
+        // raw facts. Every type appears at most once EXCEPT 'milestone', which can
+        // have one candidate per player — for those, disambiguate by which milestone
+        // candidate's player is named in the story text.
         const byType = new Map(candidates.map((c) => [c.narrative_type, c]))
+        const milestoneCands = candidates.filter((c) => c.narrative_type === 'milestone')
+        // First name the editor would use for a player (it writes first-names only).
+        const firstNameOf = (pid: string | undefined): string => {
+          const nm = pid ? playerMap.get(pid) : undefined
+          return nm ? displayName(nm).split(' ')[0] : ''
+        }
+        // Map an editor story back to its source candidate (for player_ids + raw_data).
+        // Milestones can have several candidates in one edition, so disambiguate by which
+        // candidate's first name LEADS THE HEADLINE — bodies list game lineups and would
+        // false-match a teammate (a lead about James names Zach in the lineup too).
+        const resolveSrc = (type: string, headline: string): NarrativeCandidate | undefined => {
+          if (type === 'milestone' && milestoneCands.length > 1) {
+            const hit = milestoneCands.find((c) => {
+              const fn = firstNameOf(c.player_ids[0])
+              return fn !== '' && new RegExp(`\\b${fn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(headline)
+            })
+            return hit ?? milestoneCands[0]
+          }
+          return byType.get(type)
+        }
         // Apply the substance cap to the editor's OUTPUT: keep the lead plus its top
         // (cap - 1) secondaries IN THE EDITOR'S OWN ORDER, dropping its lowest-ranked
         // ones. Because the editor already ranks secondaries by its own newsworthiness
@@ -1669,10 +1929,13 @@ export async function POST(request: Request) {
         ]
         stories.forEach((story, idx) => {
           if (typeof story.headline !== 'string' || typeof story.body !== 'string') return
-          const src = byType.get(story.type)
+          // Snap the editor's type to a known type. It occasionally echoes a substance
+          // hint as the type ("marquee_milestone"); coerceType lands that on "milestone".
+          const type = coerceType(story.type)
+          const src = resolveSrc(type, story.headline)
           narrativesToInsert.push({
             session_id,
-            narrative_type: story.type,
+            narrative_type: type,
             angle_used: 'editorial',
             tone_used: 'editorial',
             headline: story.headline,
