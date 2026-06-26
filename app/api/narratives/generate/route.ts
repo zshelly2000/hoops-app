@@ -1475,6 +1475,7 @@ STYLE:
 - First names only. Always cite specific numbers. Headlines: 8 words max, no exclamation points. No clichés. No gendered language — use "players," "the group," or names; never "guys," "men," or "brothers."
 - Reference the run by day/date ("Wednesday's run," "on June 10th"), never a venue name.
 - Banned phrases: "has been playing well," "continues to impress," "is having a great," "made his presence felt," "stepped up," "showed up," "put on a show," "not just," "not only," "but also," "it is not X it is Y," and any abstract noun used where a concrete fact would be sharper.
+- Banned word family — "edge" in ALL forms, verb AND noun: never write "edge," "edges," "edged," "edging," "the edge," or "had the edge." For a close win use instead: "took it," "held off," "outlasted," "nipped," "slipped past," "survived." For a decisive win use: "beat," "downed," "rolled past," "handled."
 - NEVER use the internal words "slate," "candidate," "entry," or "standing" in the prose — those are your working terms, not the reader's. Write naturally ("the night's biggest gap," not "the slate's lone blowout").
 
 Return the edition ONLY via the emit_edition tool.`
