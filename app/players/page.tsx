@@ -106,9 +106,14 @@ export default function PlayersPage() {
 
       {showAdd && (
         <AddPlayerModal
+          allPlayers={players}
           onClose={() => setShowAdd(false)}
           onAdded={(p) => {
-            setPlayers((prev) => [...prev, p].sort((a, b) => a.name.localeCompare(b.name)))
+            setPlayers((prev) =>
+              prev.some((existing) => existing.id === p.id)
+                ? prev.map((existing) => (existing.id === p.id ? p : existing))
+                : [...prev, p].sort((a, b) => a.name.localeCompare(b.name)),
+            )
             setShowAdd(false)
           }}
         />

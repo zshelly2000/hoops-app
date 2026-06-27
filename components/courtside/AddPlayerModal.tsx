@@ -7,50 +7,112 @@ interface Props {
   onClose: () => void
   onAdded: (player: Player) => void
   /** Full player list (active + inactive) for same-name dedup guard */
-  allPlayers?: Player[]
+  allPlayers: Player[]
 }
 
-function normalize(s: string) {
-  return s.toLowerCase().trim()
+/** lowercase, trim, collapse internal whitespace to single spaces — comparison only */
+function normalize(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
-export function AddPlayerModal({ onClose, onAdded, allPlayers = [] }: Props) {
+/** The on-screen short name / display token: nickname, else first word of full name. */
+function displayToken(name: string, nickname: string | null): string {
+  const nick = nickname?.trim()
+  if (nick) return nick
+  return name.trim().split(/\s+/)[0] ?? ''
+}
+
+/** Levenshtein distance, capped — dependency-free near-spelling detector. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  let prev = Array.from({ length: n + 1 }, (_, i) => i)
+  let curr = new Array<number>(n + 1)
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+    }
+    ;[prev, curr] = [curr, prev]
+  }
+  return prev[n]
+}
+
+export function AddPlayerModal({ onClose, onAdded, allPlayers }: Props) {
   const [name, setName] = useState('')
   const [nickname, setNickname] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [confirmingDifferent, setConfirmingDifferent] = useState(false)
 
-  // Live-match against all players as user types
+  // Live-match against all players as user types (prefix on name or nickname)
   const matches = useMemo(() => {
     const q = normalize(name)
     if (!q) return []
     return allPlayers.filter((p) => {
-      const fullMatch = normalize(p.name).startsWith(q) || normalize(p.name) === q
+      const fullMatch = normalize(p.name).startsWith(q)
       const nickMatch = p.nickname ? normalize(p.nickname).startsWith(q) : false
       return fullMatch || nickMatch
     })
   }, [name, allPlayers])
 
-  // Exact name collision (legitimate "same name, different person" case)
-  const exactCollision = useMemo(() => {
-    const q = normalize(name)
-    if (!q) return false
-    return allPlayers.some((p) => normalize(p.name) === q)
-  }, [name, allPlayers])
+  // The on-screen identity pair the typed values would produce.
+  const incomingNorm = useMemo(() => normalize(name), [name])
+  const incomingToken = useMemo(
+    () => normalize(displayToken(name, nickname || null)),
+    [name, nickname],
+  )
 
-  // Near-match (not exact) — soft warning only
-  const nearMatch = matches.length > 0 && !exactCollision
+  // Hard block: an existing player produces the same (normalized name, normalized token) pair.
+  const pairCollision = useMemo(() => {
+    if (!incomingNorm) return null
+    return (
+      allPlayers.find(
+        (p) =>
+          normalize(p.name) === incomingNorm &&
+          normalize(displayToken(p.name, p.nickname)) === incomingToken,
+      ) ?? null
+    )
+  }, [allPlayers, incomingNorm, incomingToken])
 
-  // Reset error when name changes
-  useEffect(() => { setError('') }, [name])
+  // Same full name exists but the pair differs — legitimate different-person case (gated by confirm).
+  const nameCollision = useMemo(() => {
+    if (!incomingNorm || pairCollision) return null
+    return allPlayers.find((p) => normalize(p.name) === incomingNorm) ?? null
+  }, [allPlayers, incomingNorm, pairCollision])
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) return
-    if (exactCollision && !nickname.trim()) {
-      setError(`There's already a ${name.trim()}. Add a nickname so you can tell them apart.`)
-      return
-    }
+  // Fuzzy near-spelling suggestions (distance ≤ 2 on full name). Soft, never blocks.
+  const fuzzyMatches = useMemo(() => {
+    if (!incomingNorm || incomingNorm.length < 3) return []
+    const seen = new Set(matches.map((p) => p.id))
+    return allPlayers.filter((p) => {
+      if (seen.has(p.id)) return false
+      const pn = normalize(p.name)
+      if (pn === incomingNorm) return false
+      return levenshtein(pn, incomingNorm) <= 2
+    })
+  }, [allPlayers, matches, incomingNorm])
+
+  // Suggestions surfaced above the form: exact-name records first, then fuzzy.
+  const suggestions = useMemo(() => {
+    const exactSeen = new Set(matches.map((p) => p.id))
+    return [...matches, ...fuzzyMatches.filter((p) => !exactSeen.has(p.id))]
+  }, [matches, fuzzyMatches])
+
+  // Reset error + confirm step whenever the inputs change.
+  useEffect(() => {
+    setError('')
+    setConfirmingDifferent(false)
+  }, [name, nickname])
+
+  const collisionCopy = pairCollision
+    ? `There's already a ${pairCollision.name} who shows up as "${displayToken(pairCollision.name, pairCollision.nickname)}". Two players who look identical can't be told apart on the court — give this one something to set them apart (a last initial, Big/Little, a number).`
+    : ''
+
+  async function createPlayer() {
     setSaving(true)
     setError('')
     try {
@@ -72,12 +134,26 @@ export function AddPlayerModal({ onClose, onAdded, allPlayers = [] }: Props) {
     }
   }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!name.trim()) return
+    // Hard block — identical on-screen identity. Creation impossible.
+    if (pairCollision) {
+      setError(collisionCopy)
+      return
+    }
+    // Legitimate same-name-different-person — require an explicit confirm step.
+    if (nameCollision && !confirmingDifferent) {
+      setConfirmingDifferent(true)
+      return
+    }
+    await createPlayer()
+  }
+
   async function handleMatchTap(player: Player) {
-    // Tapping a match: if active → check in directly (no create); if inactive → reactivate + check in
-    // We signal this by calling onAdded with the existing player record.
-    // The page handles reactivation if needed.
+    // Tapping a match: if active → check in directly (no create); if inactive → reactivate + check in.
+    // We signal this by calling onAdded with the existing player record; the page handles reactivation.
     if (!player.is_active) {
-      // Optimistically treat as active so the page can add to squad
       onAdded({ ...player, is_active: true })
     } else {
       onAdded(player)
@@ -97,16 +173,16 @@ export function AddPlayerModal({ onClose, onAdded, allPlayers = [] }: Props) {
             onChange={(e) => setName(e.target.value)}
             autoFocus
             required
-            className="w-full rounded-lg border border-white/[.06] bg-[#1a1a28] px-4 py-3 text-[#f0f0f8] placeholder-[#555570] focus:border-[#fb923c] focus:outline-none"
+            className="w-full rounded-lg border border-white/[.06] bg-[#1a1a28] px-4 py-3 text-base text-[#f0f0f8] placeholder-[#555570] focus:border-[#fb923c] focus:outline-none"
           />
 
-          {/* Live match suggestions */}
-          {matches.length > 0 && (
+          {/* Live match + fuzzy suggestions */}
+          {suggestions.length > 0 && (
             <div className="rounded-xl border border-white/[.06] bg-[#1a1a28] overflow-hidden">
               <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[#555570]">
                 Existing players — tap to add without creating a duplicate
               </p>
-              {matches.map((p) => (
+              {suggestions.map((p) => (
                 <button
                   key={p.id}
                   type="button"
@@ -116,7 +192,7 @@ export function AddPlayerModal({ onClose, onAdded, allPlayers = [] }: Props) {
                   <div>
                     <span className="text-sm font-semibold text-[#f0f0f8]">{p.name}</span>
                     {p.nickname && (
-                      <span className="ml-1.5 text-xs text-[#94a3b8]">"{p.nickname}"</span>
+                      <span className="ml-1.5 text-xs text-[#94a3b8]">&quot;{p.nickname}&quot;</span>
                     )}
                   </div>
                   <span className={`text-[10px] font-bold uppercase rounded-full px-2 py-0.5 ${
@@ -133,41 +209,69 @@ export function AddPlayerModal({ onClose, onAdded, allPlayers = [] }: Props) {
 
           <input
             type="text"
-            placeholder={exactCollision ? 'Nickname required *' : 'Nickname (optional)'}
+            placeholder={pairCollision || nameCollision ? 'Set-apart name (last initial, number…)' : 'Nickname (optional)'}
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
-            required={exactCollision}
-            className={`w-full rounded-lg border bg-[#1a1a28] px-4 py-3 text-[#f0f0f8] placeholder-[#555570] focus:outline-none ${
-              exactCollision
+            className={`w-full rounded-lg border bg-[#1a1a28] px-4 py-3 text-base text-[#f0f0f8] placeholder-[#555570] focus:outline-none ${
+              pairCollision
                 ? 'border-[#fb923c] focus:border-[#fb923c]'
                 : 'border-white/[.06] focus:border-[#fb923c]'
             }`}
           />
 
-          {nearMatch && !exactCollision && (
-            <p className="text-xs text-amber-400">
-              Similar name already exists — tap above to use the existing record, or continue to create a new one.
-            </p>
+          {/* Hard block — identical on-screen identity */}
+          {pairCollision && (
+            <p className="text-sm text-red-400">{collisionCopy}</p>
           )}
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
+          {/* Confirm step — same name, distinct identity */}
+          {confirmingDifferent && nameCollision && (
+            <div className="rounded-xl border border-[#fb923c]/40 bg-[#fb923c]/[.06] p-3">
+              <p className="text-sm text-[#f0f0f8]">
+                This creates a <span className="font-bold">SECOND {nameCollision.name}</span>. Are
+                they a different person? If this is the existing {nameCollision.name}, tap their card
+                above instead.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDifferent(false)}
+                  className="flex-1 rounded-lg border border-white/[.06] py-2 text-sm font-semibold text-[#94a3b8] hover:bg-[#1a1a28]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void createPlayer()}
+                  className="flex-1 rounded-lg bg-[#fb923c] py-2 text-sm font-semibold text-white disabled:opacity-50 hover:bg-orange-300"
+                >
+                  {saving ? 'Adding…' : 'Yes, different person — create'}
+                </button>
+              </div>
+            </div>
+          )}
 
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 rounded-xl border border-white/[.06] py-3 font-semibold text-[#94a3b8] hover:bg-[#1a1a28]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !name.trim() || (exactCollision && !nickname.trim())}
-              className="flex-1 rounded-xl bg-[#fb923c] py-3 font-semibold text-white disabled:opacity-50 hover:bg-orange-300"
-            >
-              {saving ? 'Adding…' : 'Add Player'}
-            </button>
-          </div>
+          {error && !pairCollision && <p className="text-sm text-red-400">{error}</p>}
+
+          {!confirmingDifferent && (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-xl border border-white/[.06] py-3 font-semibold text-[#94a3b8] hover:bg-[#1a1a28]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving || !name.trim() || !!pairCollision}
+                className="flex-1 rounded-xl bg-[#fb923c] py-3 font-semibold text-white disabled:opacity-50 hover:bg-orange-300"
+              >
+                {saving ? 'Adding…' : 'Add Player'}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>
