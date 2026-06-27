@@ -11,6 +11,9 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ['var(--font-geist-sans)', 'system-ui', 'sans-serif'],
+        // Plasma Tangerine type system (additive — does not change the `sans` default)
+        condensed: ['var(--font-barlow-condensed)', 'system-ui', 'sans-serif'],
+        inter: ['var(--font-inter)', 'system-ui', 'sans-serif'],
       },
       colors: {
         canvas: '#08080e',

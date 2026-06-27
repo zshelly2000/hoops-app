@@ -32,6 +32,16 @@
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
+
+  /* Plasma Tangerine: clipped gradient text. Keep emoji OUT of this span —
+     emoji inside a gradient-clipped element render invisible. */
+  .gradient-accent {
+    background: linear-gradient(135deg, #818cf8, #c084fc, #fb923c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
 }
 
 .glass-nav {

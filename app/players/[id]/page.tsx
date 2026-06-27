@@ -25,6 +25,7 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
   const [editName, setEditName] = useState(false)
   const [nameVal, setNameVal] = useState('')
   const [nicknameVal, setNicknameVal] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -134,11 +135,40 @@ export default function PlayerProfilePage({ params }: { params: { id: string } }
                   {player.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-start gap-2">
                 <button onClick={() => setEditName(true)} className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs text-slate-400 hover:border-white/20">Edit</button>
                 <button onClick={toggleActive} className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs text-slate-400 hover:border-white/20">
                   {player.is_active ? 'Deactivate' : 'Activate'}
                 </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuOpen((o) => !o)}
+                    aria-label="More actions"
+                    aria-haspopup="menu"
+                    aria-expanded={menuOpen}
+                    className="rounded-lg border border-white/[.06] px-2.5 py-1.5 text-xs leading-none text-slate-400 hover:border-white/20"
+                  >
+                    ⋯
+                  </button>
+                  {menuOpen && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label="Close menu"
+                        onClick={() => setMenuOpen(false)}
+                        className="fixed inset-0 z-10 cursor-default"
+                      />
+                      <div className="absolute right-0 z-20 mt-1.5 w-56 overflow-hidden rounded-xl border border-white/[.08] bg-[#1a1a28] shadow-xl">
+                        <Link
+                          href={`/players/${params.id}/merge`}
+                          className="block px-4 py-3 text-left text-sm text-[#f0f0f8] hover:bg-white/[.04]"
+                        >
+                          Merge into another player…
+                        </Link>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
