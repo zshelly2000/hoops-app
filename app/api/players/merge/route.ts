@@ -165,9 +165,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Identity update failed: ${identityErr.message}` }, { status: 500, headers: NO_CACHE })
   }
 
-  // 4. Delete the loser. By now nothing in game_players references it, so the
-  //    ON DELETE RESTRICT FK on game_players.player_id is satisfied. If some
-  //    other FK still blocks it, surface the error rather than forcing.
+  // 4. Clear the loser from the derived stat tables whose FK to players.id is
+  //    RESTRICT, so the final delete isn't blocked. Empirically (see
+  //    MERGE_FINISH), the restricting tables are trio_stats and
+  //    lineup_five_stats — the loser can sit in ANY of their player columns.
+  //    The other player-referencing derived tables (player_rapm, player_bff,
+  //    player_nemesis, …) are cascade/set-null and don't block. All of these are
+  //    nightly-recomputed, so deleting the loser's rows is safe — they
+  //    regenerate on the next run. Done in the same guarded, monotonic sequence,
+  //    before the player delete.
+  const restrictingDerived: { table: string; cols: string[] }[] = [
+    { table: 'trio_stats', cols: ['player1_id', 'player2_id', 'player3_id'] },
+    { table: 'lineup_five_stats', cols: ['player1_id', 'player2_id', 'player3_id', 'player4_id', 'player5_id'] },
+  ]
+  for (const { table, cols } of restrictingDerived) {
+    const orFilter = cols.map((c) => `${c}.eq.${loserId}`).join(',')
+    const { error: derivedErr } = await supabaseAdmin.from(table).delete().or(orFilter)
+    if (derivedErr) {
+      return NextResponse.json(
+        { error: `Clearing ${table} for the merge failed: ${derivedErr.message}` },
+        { status: 500, headers: NO_CACHE },
+      )
+    }
+  }
+
+  // 5. Delete the loser. By now game_players and the restricting derived tables
+  //    no longer reference it, so the ON DELETE RESTRICT FKs are satisfied. If
+  //    some other FK still blocks it, surface the error rather than forcing.
   const { error: deleteErr } = await supabaseAdmin.from('players').delete().eq('id', loserId)
   if (deleteErr) {
     return NextResponse.json(

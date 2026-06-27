@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { normalize } from '@/lib/identity'
 import type { Player } from '@/lib/types'
 
 interface Props {
@@ -8,11 +9,6 @@ interface Props {
   onAdded: (player: Player) => void
   /** Full player list (active + inactive) for same-name dedup guard */
   allPlayers: Player[]
-}
-
-/** lowercase, trim, collapse internal whitespace to single spaces — comparison only */
-function normalize(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, ' ')
 }
 
 /** The on-screen short name / display token: nickname, else first word of full name. */
