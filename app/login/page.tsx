@@ -37,8 +37,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <div className="mb-3 text-5xl">🏀</div>
-          <h1 className="text-2xl font-black text-[#f0f0f8]">Hoops Tracker</h1>
-          <p className="mt-1 text-sm text-slate-400">Enter the password to continue</p>
+          <h1 className="font-condensed text-5xl font-bold uppercase tracking-wide gradient-accent">Hoopsta</h1>
+          <p className="mt-1 text-sm text-fg-dim">Enter the password to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -49,17 +49,17 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             autoFocus
             required
-            className="w-full rounded-xl border border-white/[.06] bg-surface-raised px-4 py-4 text-center text-lg text-[#f0f0f8] placeholder-slate-400 focus:border-orange-400 focus:outline-none"
+            className="w-full rounded-xl border border-white/[.06] bg-surface-raised px-4 py-4 text-center text-lg text-fg placeholder-fg-dim focus:border-accent focus:outline-none"
           />
 
           {error && (
-            <p className="text-center text-sm text-red-400">{error}</p>
+            <p className="text-center text-sm text-loss">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading || !password}
-            className="w-full rounded-xl bg-orange-400 py-4 text-lg font-black text-white disabled:opacity-50 hover:bg-orange-300 active:scale-95 transition-all"
+            className="w-full rounded-xl bg-accent py-4 text-lg font-black text-canvas disabled:opacity-50 hover:brightness-110 active:scale-95 transition-all"
           >
             {loading ? 'Checking…' : 'Enter'}
           </button>
