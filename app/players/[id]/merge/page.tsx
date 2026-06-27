@@ -179,8 +179,10 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
   // ── Derived review values ─────────────────────────────────────────────────
   const survivor = preview ? (preview.a.id === survivorId ? preview.a : preview.b) : null
   const loser = preview ? (preview.a.id === survivorId ? preview.b : preview.a) : null
+  // Same-team collisions are dropped (deduped), not moved — so the survivor's
+  // true resulting total is its own games plus only the games that actually move.
   const gamesMoved = preview && loser ? loser.totalGames - preview.sameTeamGames : 0
-  const combinedGames = preview?.combinedGames ?? 0
+  const resultingTotal = preview && survivor ? survivor.totalGames + gamesMoved : 0
 
   const nameOptions = useMemo(() => {
     if (!preview) return []
@@ -223,7 +225,9 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
       const data = await res.json()
       if (!res.ok) throw new Error((data as { error: string }).error)
       const result = data as { gamesMoved: number; finalName: string; survivorId: string }
-      setToast(`Merged ${result.gamesMoved} games into ${result.finalName} · ${loser.name} removed`)
+      // resultingTotal = survivor's pre-merge games + the games that actually moved.
+      const finalTotal = survivor.totalGames + result.gamesMoved
+      setToast(`Merged — ${result.finalName} now has ${finalTotal} games (${loser.name} removed)`)
       // Land on the survivor's detail page; the loser id no longer exists.
       setTimeout(() => router.push(`/players/${result.survivorId}`), 900)
     } catch (err) {
@@ -422,8 +426,8 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
               <p className="text-[13.5px] leading-[1.5]">
                 <span className="font-bold text-[#fb923c]">{gamesMoved} games</span> move from{' '}
                 <b className="text-[#f0f0f8]">{loser.name}</b> into{' '}
-                <b className="text-[#f0f0f8]">{survivor.name}</b>. Combined:{' '}
-                <b className="text-[#f0f0f8]">{combinedGames} games</b>
+                <b className="text-[#f0f0f8]">{survivor.name}</b>. {survivor.name} will have{' '}
+                <b className="text-[#f0f0f8]">{resultingTotal} games</b>
                 {preview.combinedFirstYear ? (
                   <>
                     {' '}
@@ -496,7 +500,7 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
 
             <TierTag>⚪ For the record</TierTag>
             <Flag tone="plain" title="Summary">
-              {gamesMoved} games move · combined {combinedGames}
+              {gamesMoved} games move · {survivor.name} ends with {resultingTotal}
               {preview.combinedFirstYear ? ` · earliest game ${preview.combinedFirstYear} becomes the “since.”` : '.'}{' '}
               {preview.pinnedBadge ? `${preview.pinnedBadge.holderName} holds a pinned badge.` : 'Neither record holds a pinned all-time badge.'}
             </Flag>
@@ -542,9 +546,9 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
             ) : (
               <p className="mb-2.5 px-0.5 text-[13px] leading-[1.55] text-[#94a3b8]">
                 To merge, type the survivor&apos;s full name —{' '}
-                <b className="text-[#f0f0f8]">{survivor.name}</b>. This joins{' '}
-                <b className="text-[#f0f0f8]">{combinedGames} games</b> under one record and deletes{' '}
-                <b className="text-[#f0f0f8]">{loser.name}</b>.
+                <b className="text-[#f0f0f8]">{survivor.name}</b>. {survivor.name} will end up with{' '}
+                <b className="text-[#f0f0f8]">{resultingTotal} games</b> and{' '}
+                <b className="text-[#f0f0f8]">{loser.name}</b> is deleted.
               </p>
             )}
             <input
@@ -574,7 +578,7 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
                 onClick={() => void runMerge()}
                 className="flex-1 rounded-[13px] bg-[#dc2626] py-3.5 text-sm font-bold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {merging ? 'Merging…' : `Merge ${combinedGames} games`}
+                {merging ? 'Merging…' : `Merge — ${survivor.name} gets ${resultingTotal} games`}
               </button>
             </div>
             <p className="mt-2.5 text-center text-[11px] text-[#555570]">

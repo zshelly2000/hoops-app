@@ -5,9 +5,19 @@
 // (AddPlayerModal keeps its own local copies — same logic — and is untouched.)
 // ============================================================
 
-/** lowercase, trim, collapse internal whitespace to single spaces — comparison only. */
+/**
+ * The single definition of "same identity" for comparison. Lowercase, trim,
+ * strip apostrophes (straight and curly) and periods so punctuation drift
+ * doesn't split one person in two ("Mark A'Ala" === "Mark Aala", "T.J." === "TJ"),
+ * then collapse internal whitespace. Hyphens are intentionally left alone.
+ * Pins, twin detection, and the duplicate-prevention guards all inherit this.
+ */
 export function normalize(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, ' ')
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/['’.]/g, '')
+    .replace(/\s+/g, ' ')
 }
 
 /** The on-screen short name / display token: nickname, else first word of full name. */
@@ -54,7 +64,8 @@ export function levenshtein(a: string, b: string): number {
 // Pinned all-time badges.
 // hoops-app has no badge system of its own (those live in the read-only
 // hoops-stats portal), so the pinned holders are keyed here by normalized name,
-// the only stable handle we have. Matching is name-based and case/space-insensitive.
+// the only stable handle we have. Matching is name-based, via the shared `normalize`
+// (so it's case-, space-, and punctuation-insensitive).
 // ============================================================
 
 export interface PinnedBadge {
@@ -69,16 +80,11 @@ export const PINNED_BADGES: PinnedBadge[] = [
 ]
 
 /**
- * Pin matching is name-keyed, so it must survive punctuation drift in the roster
- * (e.g. the canonical "Mark A'Ala" is stored as "Mark Aala"). Strip apostrophes
- * and periods on top of the usual normalize before comparing.
+ * Returns the pinned badge a player holds, matched by normalized name. Punctuation
+ * folding (e.g. the canonical "Mark A'Ala" matching the stored "Mark Aala") comes
+ * from `normalize` itself now — there is no pin-specific comparator.
  */
-function pinKey(name: string): string {
-  return normalize(name).replace(/['’.]/g, '')
-}
-
-/** Returns the pinned badge a player holds (by normalized name), or null. */
 export function pinnedBadgeFor(player: { name: string }): PinnedBadge | null {
-  const n = pinKey(player.name)
-  return PINNED_BADGES.find((b) => pinKey(b.holderName) === n) ?? null
+  const n = normalize(player.name)
+  return PINNED_BADGES.find((b) => normalize(b.holderName) === n) ?? null
 }
