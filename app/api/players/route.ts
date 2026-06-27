@@ -20,6 +20,17 @@ function displayToken(name: string, nickname: string | null): string {
   return name.trim().split(/\s+/)[0] ?? ''
 }
 
+/** The friendly duplicate-identity 409, shared by the app-level backstop and the
+ *  DB unique-index (23505) race path so both return an identical response. */
+function duplicateIdentity409(name: string, nickname: string | null) {
+  return NextResponse.json(
+    {
+      error: `There's already a ${name} who shows up as "${displayToken(name, nickname)}". Give this one something to set them apart (a last initial, Big/Little, a number).`,
+    },
+    { status: 409, headers: NO_CACHE },
+  )
+}
+
 export async function GET() {
   const { data, error } = await supabase
     .from('players')
@@ -61,12 +72,7 @@ export async function POST(request: Request) {
   )
 
   if (collision) {
-    return NextResponse.json(
-      {
-        error: `There's already a ${collision.name} who shows up as "${displayToken(collision.name, collision.nickname)}". Give this one something to set them apart (a last initial, Big/Little, a number).`,
-      },
-      { status: 409, headers: NO_CACHE },
-    )
+    return duplicateIdentity409(collision.name, collision.nickname)
   }
 
   const { data, error } = await supabaseAdmin
@@ -80,6 +86,17 @@ export async function POST(request: Request) {
     .single()
 
   if (error) {
+    // Write race: two creates slipped past the app-level check and the DB index
+    // rejected the second. Map this index's unique violation (23505) to the same
+    // friendly 409. Match the index name in message/details (PostgrestError has no
+    // `constraint` field). Any other 23505 falls through to the generic error.
+    const isIdentityDup =
+      error.code === '23505' &&
+      (error.message.includes('players_identity_unique') ||
+        error.details?.includes('players_identity_unique'))
+    if (isIdentityDup) {
+      return duplicateIdentity409(name, nickname)
+    }
     return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
   }
 
