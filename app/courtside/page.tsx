@@ -772,15 +772,15 @@ export default function CourtsidePage() {
     <>
       {/* ── Start screen ── */}
       {screen === 'start' && (
-        <main className="flex h-[100dvh] flex-col items-center justify-center bg-[#08080e] px-6 pb-24">
+        <main className="flex h-[100dvh] flex-col items-center justify-center bg-canvas px-6 pb-24">
           <div className="w-full max-w-sm text-center">
             <div className="mb-4 text-5xl">🏀</div>
-            <h1 className="mb-2 text-2xl font-black text-[#f0f0f8]">Courtside</h1>
-            <p className="mb-8 text-sm text-[#94a3b8]">Start a session to begin logging games.</p>
+            <h1 className="mb-2 text-2xl font-black text-fg">Courtside</h1>
+            <p className="mb-8 text-sm text-fg-dim">Start a session to begin logging games.</p>
             <button
               onClick={() => void startSession()}
               disabled={startingSession}
-              className="w-full rounded-2xl bg-[#fb923c] px-8 py-5 text-xl font-black text-white shadow-lg disabled:opacity-50 hover:bg-orange-300 active:scale-95 transition-all"
+              className="w-full rounded-2xl bg-accent px-8 py-5 text-xl font-black text-canvas shadow-lg disabled:opacity-50 hover:brightness-110 active:scale-95 transition-all"
             >
               {startingSession ? 'Starting…' : "Start Today's Run"}
             </button>

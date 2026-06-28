@@ -18,9 +18,9 @@ export function GameLogStrip({ games }: Props) {
       {games.map((g) => (
         <span
           key={g.id}
-          className="flex-none rounded-lg border border-white/[.06] bg-[#111118] px-2 py-1 text-[10px] font-black text-[#94a3b8]"
+          className="flex-none rounded-lg border border-white/[.06] bg-surface px-2 py-1 text-[10px] font-black text-fg-dim"
         >
-          G{g.game_number} <span className="text-[#f0f0f8]">{g.team1_score}–{g.team2_score}</span>
+          G{g.game_number} <span className="text-fg">{g.team1_score}–{g.team2_score}</span>
         </span>
       ))}
     </div>
