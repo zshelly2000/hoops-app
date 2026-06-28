@@ -117,7 +117,7 @@ export default function CourtsidePage() {
   const [t2Score, setT2Score] = useState('')
 
   // Post-game
-  const [lastGameInfo, setLastGameInfo] = useState<{ number: number; winnerTeam: 1 | 2 | null } | null>(null)
+  const [lastGameInfo, setLastGameInfo] = useState<{ number: number; winnerTeam: 1 | 2 | null; team1Players: string[]; team2Players: string[] } | null>(null)
 
   // Undo
   const [undoTarget, setUndoTarget] = useState<UndoTarget | null>(null)
@@ -589,7 +589,7 @@ export default function CourtsidePage() {
     setT2Score('')
     saveJSON(draftKey(session.id), { assignments: [], t1: '', t2: '', screen: 'paint' })
 
-    setLastGameInfo({ number: newCount, winnerTeam })
+    setLastGameInfo({ number: newCount, winnerTeam, team1Players: team1PlayerIds, team2Players: team2PlayerIds })
     setScreen('postgame')
 
     // Start undo timer — initially points at localId (no server id yet)
@@ -648,11 +648,10 @@ export default function CourtsidePage() {
 
   function handleRunback() {
     if (!lastGameInfo) return
-    // Re-apply the same assignments that were just saved
-    // (they were cleared — need to restore from undo target if available)
-    if (undoTarget) {
-      setAssignments(buildAssignmentsFromSavedTeams(undoTarget.team1Players, undoTarget.team2Players))
-    }
+    // Re-apply the same assignments that were just saved. Rosters come from
+    // lastGameInfo (lives as long as the post-game screen), not the undo target
+    // (which expires after ~8s).
+    setAssignments(buildAssignmentsFromSavedTeams(lastGameInfo.team1Players, lastGameInfo.team2Players))
     setScreen('paint')
     setActiveBrush(1)
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
@@ -660,8 +659,8 @@ export default function CourtsidePage() {
   }
 
   function handleWinnersStay() {
-    if (!lastGameInfo || !undoTarget) return
-    const winnerIds = lastGameInfo.winnerTeam === 1 ? undoTarget.team1Players : undoTarget.team2Players
+    if (!lastGameInfo) return
+    const winnerIds = lastGameInfo.winnerTeam === 1 ? lastGameInfo.team1Players : lastGameInfo.team2Players
     const next = new Map<string, TeamSlot>()
     winnerIds.forEach((id) => next.set(id, 1))
     setAssignments(next)
