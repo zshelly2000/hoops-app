@@ -140,15 +140,15 @@ export function LocationPill({ sessionId, location, onLocationChange }: Props) {
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative min-w-0">
       <button
         onClick={() => { setOpen((o) => !o); setOtherMode(false); setOtherValue('') }}
-        className="flex items-center gap-1 rounded-full border border-white/[.08] bg-white/[.04] px-2.5 py-1 text-xs text-slate-400 transition-colors hover:border-white/20 hover:text-slate-300"
+        className="flex min-w-0 max-w-full items-center gap-1 rounded-full border border-white/[.06] bg-surface px-2.5 py-1 text-xs text-fg-dim transition-colors hover:border-white/20"
         aria-label="Change location"
       >
-        <span>📍</span>
-        <span className="max-w-[140px] truncate">{saving ? '…' : location}</span>
-        <span className="opacity-50">▾</span>
+        <span className="flex-none">📍</span>
+        <span className="min-w-0 truncate">{saving ? '…' : location}</span>
+        <span className="flex-none opacity-50">▾</span>
       </button>
 
       {open && (

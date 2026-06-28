@@ -127,30 +127,32 @@ export function CheckIn({
   }
 
   const containerClass = isOverlay
-    ? 'h-full flex flex-col bg-[#08080e] max-w-[430px] mx-auto'
+    ? 'h-full flex flex-col bg-canvas max-w-[430px] mx-auto'
     : 'flex flex-col h-[100dvh] max-w-[430px] mx-auto'
 
   return (
     <div className={containerClass}>
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-1">
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-base font-black text-[#f0f0f8]">Courtside</span>
-            <span className="ml-2 text-xs text-[#94a3b8]">
-              {gameCount > 0 ? `· Game ${gameCount + 1}` : '· Check-In'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex-none whitespace-nowrap flex items-baseline gap-1.5">
+              <span className="font-condensed text-[20px] font-bold uppercase tracking-wide gradient-accent leading-none">Courtside</span>
+              <span className="text-[11px] text-fg-dim whitespace-nowrap">
+                {gameCount > 0 ? `· Game ${gameCount + 1}` : '· Check-In'}
+              </span>
+            </div>
             <LocationPill
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
             />
+          </div>
+          <div className="flex items-center gap-1.5 flex-none">
             {isOverlay ? (
               <button
                 onClick={onDone}
-                className="rounded-full border border-white/[.08] bg-white/[.04] px-3 py-1 text-xs font-bold text-[#fb923c]"
+                className="whitespace-nowrap rounded-full border border-white/[.08] bg-white/[.04] px-3 py-1 text-xs font-bold text-accent"
               >
                 Done
               </button>
@@ -158,7 +160,7 @@ export function CheckIn({
               <button
                 onClick={onOpenNav}
                 aria-label="App navigation"
-                className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-[#111118] text-[13px] leading-none text-[#94a3b8]"
+                className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-surface text-[13px] leading-none text-fg-dim"
               >
                 ⊞
               </button>
@@ -169,12 +171,12 @@ export function CheckIn({
 
       {/* Inactive mode banner */}
       {inactiveMode && (
-        <div className="flex-none flex items-center gap-2 px-3.5 py-2 bg-[#1a1a28] border-b border-white/[.06]">
-          <span className="text-xs font-black uppercase tracking-wider text-[#555570]">Inactive Players</span>
+        <div className="flex-none flex items-center gap-2 px-3.5 py-2 bg-surface-raised border-b border-white/[.06]">
+          <span className="text-xs font-black uppercase tracking-wider text-fg-faint">Inactive Players</span>
           <span className="flex-1" />
           <button
             onClick={() => { setInactiveMode(false); setSearch('') }}
-            className="text-xs font-bold text-[#fb923c]"
+            className="text-xs font-bold text-accent"
           >
             ← Back
           </button>
@@ -189,12 +191,12 @@ export function CheckIn({
             placeholder={inactiveMode ? 'Search inactive…' : 'Search players…'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-white/[.06] bg-[#1a1a28] py-2 pl-3 pr-8 text-sm text-[#f0f0f8] placeholder-[#555570] focus:border-[#fb923c] focus:outline-none"
+            className="w-full rounded-xl border border-white/[.06] bg-surface-raised py-2 pl-3 pr-8 text-sm text-fg placeholder-fg-faint focus:border-accent focus:outline-none"
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#555570] hover:text-[#94a3b8] text-xs leading-none"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-fg-faint hover:text-fg-dim text-xs leading-none"
               aria-label="Clear search"
             >
               ✕
@@ -204,7 +206,7 @@ export function CheckIn({
         {!inactiveMode && (
           <button
             onClick={onNewPlayer}
-            className="flex-none rounded-xl border border-white/[.06] bg-[#1a1a28] px-3 py-2 text-xs font-bold text-[#94a3b8] whitespace-nowrap hover:border-white/20"
+            className="flex-none rounded-xl border border-white/[.06] bg-surface-raised px-3 py-2 text-xs font-bold text-fg-dim whitespace-nowrap hover:border-white/20"
           >
             + New
           </button>
@@ -226,27 +228,27 @@ export function CheckIn({
                 disabled={blocked}
                 className={`relative flex flex-col items-center justify-center gap-0.5 rounded-[11px] border py-2.5 px-1 text-center transition-all active:scale-95 min-h-[60px] ${
                   inactiveMode
-                    ? 'border-white/[.04] bg-[#111118] opacity-60'
+                    ? 'border-white/[.04] bg-surface opacity-60'
                     : checked
-                    ? 'border-[#fb923c] bg-[rgba(251,146,60,0.12)]'
-                    : 'border-white/[.06] bg-[#1a1a28]'
+                    ? 'border-accent bg-[rgba(251,146,60,0.12)]'
+                    : 'border-white/[.06] bg-surface-raised'
                 } ${blocked ? 'opacity-40 cursor-not-allowed' : ''}`}
               >
                 {checked && !inactiveMode && (
-                  <span className="absolute top-1.5 right-2 text-[9px] text-[#fb923c]">✓</span>
+                  <span className="absolute top-1.5 right-2 text-[9px] text-accent">✓</span>
                 )}
-                <span className="text-[13px] font-bold leading-snug text-[#f0f0f8] truncate w-full text-center px-1">
+                <span className="text-[13px] font-bold leading-snug text-fg truncate w-full text-center px-1">
                   {sn}
                 </span>
                 {showSub && (
-                  <span className="text-[9px] text-[#555570] truncate w-full text-center px-1 leading-snug">
+                  <span className="text-[9px] text-fg-faint truncate w-full text-center px-1 leading-snug">
                     {player.name}
                   </span>
                 )}
                 {inactiveMode && lastPlayed[player.id] ? (
-                  <span className="text-[8px] text-[#555570]">{relativeDate(lastPlayed[player.id])}</span>
+                  <span className="text-[8px] text-fg-faint">{relativeDate(lastPlayed[player.id])}</span>
                 ) : !inactiveMode && lastPlayed[player.id] ? (
-                  <span className="text-[8px] text-[#555570]">{relativeDate(lastPlayed[player.id])}</span>
+                  <span className="text-[8px] text-fg-faint">{relativeDate(lastPlayed[player.id])}</span>
                 ) : null}
               </button>
             )
@@ -257,26 +259,26 @@ export function CheckIn({
         {!inactiveMode && (
           <button
             onClick={() => { setInactiveMode(true); setSearch('') }}
-            className="mt-4 w-full rounded-xl border border-white/[.04] py-3 text-xs text-[#555570] hover:text-[#94a3b8] transition-colors"
+            className="mt-4 w-full rounded-xl border border-white/[.04] py-3 text-xs text-fg-faint hover:text-fg-dim transition-colors"
           >
             Can&apos;t find someone? Inactive players →
           </button>
         )}
 
         {displayPlayers.length === 0 && (
-          <p className="py-8 text-center text-sm text-[#555570]">
+          <p className="py-8 text-center text-sm text-fg-faint">
             {search ? 'No matches' : inactiveMode ? 'No inactive players' : 'No players'}
           </p>
         )}
       </div>
 
       {/* Pinned bottom CTA */}
-      <div className="flex-none px-3.5 pb-[calc(14px+env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-[#08080e] via-[#08080e]/90 to-transparent">
+      <div className="flex-none px-3.5 pb-[calc(14px+env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-canvas via-canvas/90 to-transparent">
         {squadCount > 0 && !inactiveMode && (
           <div className="mb-1.5 text-center">
             <button
               onClick={onClearAll}
-              className="text-[11px] font-semibold text-[#555570] underline underline-offset-2 hover:text-[#94a3b8]"
+              className="text-[11px] font-semibold text-fg-faint underline underline-offset-2 hover:text-fg-dim"
             >
               Clear all ({squadCount})
             </button>
@@ -285,7 +287,7 @@ export function CheckIn({
         <button
           onClick={onDone}
           disabled={squadCount < 2}
-          className="w-full rounded-2xl bg-[#fb923c] py-4 text-lg font-black text-white shadow-lg disabled:opacity-35 transition-all active:scale-[.98]"
+          className="w-full rounded-2xl bg-accent py-4 text-lg font-black text-canvas shadow-lg disabled:opacity-35 transition-all active:scale-[.98]"
         >
           {squadCount < 2
             ? 'Check in players to start'

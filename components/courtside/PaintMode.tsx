@@ -94,29 +94,29 @@ export function PaintMode({
     <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto overflow-hidden">
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[17px] font-black text-[#f0f0f8]">Courtside</span>
-            <span className="text-[11px] text-[#94a3b8]">
-              · Game {gameCount + 1}
-            </span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex-none whitespace-nowrap flex items-baseline gap-1.5">
+              <span className="font-condensed text-[20px] font-bold uppercase tracking-wide gradient-accent leading-none">Courtside</span>
+              <span className="text-[11px] text-fg-dim whitespace-nowrap">· Game {gameCount + 1}</span>
+            </div>
             <LocationPill
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
             />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-none">
             <button
               onClick={onSquadChip}
-              className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-[#111118] px-2.5 py-1 text-[11px] font-bold text-[#94a3b8]"
+              className="whitespace-nowrap flex-none flex items-center gap-1.5 rounded-full border border-white/[.08] bg-surface px-2.5 py-1 text-[11px] font-semibold text-fg-dim"
             >
-              Squad · <b className="text-[#fb923c]">{squadCount}</b>
+              Squad <b className="bg-accent text-canvas rounded-full px-1.5 font-bold">{squadCount}</b>
             </button>
             <button
               onClick={onOpenNav}
               aria-label="App navigation"
-              className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-[#111118] text-[13px] leading-none text-[#94a3b8]"
+              className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-surface text-[13px] leading-none text-fg-dim"
             >
               ⊞
             </button>
@@ -138,10 +138,10 @@ export function PaintMode({
             const showSub = sharedShortNames.has(sn)
             const tileColor =
               team === 1
-                ? 'bg-[rgba(59,130,246,0.24)] border-[#3b82f6] text-[#dbeafe]'
+                ? 'bg-[rgba(129,140,248,0.24)] border-accent-cool text-[#e0e7ff]'
                 : team === 2
-                ? 'bg-[rgba(251,146,60,0.24)] border-[#fb923c] text-[#ffedd5]'
-                : 'bg-[#1a1a28] border-white/[.06] text-[#f0f0f8]'
+                ? 'bg-[rgba(251,146,60,0.24)] border-accent text-[#ffedd5]'
+                : 'bg-surface-raised border-white/[.06] text-fg'
 
             return (
               <button
@@ -162,15 +162,15 @@ export function PaintMode({
       </div>
 
       {/* Pinned bottom bar */}
-      <div className="flex-none px-3.5 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-[#08080e] from-75% to-transparent">
+      <div className="flex-none px-3.5 pb-[calc(10px+env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-canvas from-75% to-transparent">
         {/* Brush selectors */}
         <div className="grid grid-cols-2 gap-2 mb-2">
           <button
             onClick={() => onActiveBrushChange(1)}
             className={`rounded-[13px] border-2 py-2 flex items-center justify-center gap-2 font-black text-[11px] tracking-wide uppercase transition-all ${
               activeBrush === 1
-                ? 'border-[#3b82f6] text-[#bfdbfe] bg-[rgba(59,130,246,0.13)]'
-                : 'border-white/[.06] text-[#555570] bg-[#111118]'
+                ? 'border-accent-cool text-[#c7d2fe] bg-[rgba(129,140,248,0.13)]'
+                : 'border-white/[.06] text-fg-faint bg-surface'
             }`}
           >
             <span className="text-[20px] leading-none">{t1Count}</span>
@@ -180,8 +180,8 @@ export function PaintMode({
             onClick={() => onActiveBrushChange(2)}
             className={`rounded-[13px] border-2 py-2 flex items-center justify-center gap-2 font-black text-[11px] tracking-wide uppercase transition-all ${
               activeBrush === 2
-                ? 'border-[#fb923c] text-[#fed7aa] bg-[rgba(251,146,60,0.13)]'
-                : 'border-white/[.06] text-[#555570] bg-[#111118]'
+                ? 'border-accent text-[#fed7aa] bg-[rgba(251,146,60,0.13)]'
+                : 'border-white/[.06] text-fg-faint bg-surface'
             }`}
           >
             <span className="text-[20px] leading-none">{t2Count}</span>
@@ -200,7 +200,7 @@ export function PaintMode({
         <button
           onClick={onEnterScore}
           disabled={!canEnterScore}
-          className="w-full rounded-[15px] bg-[#fb923c] py-[15px] text-[17px] font-black text-white disabled:opacity-35 transition-all active:scale-[.97]"
+          className="w-full rounded-[15px] bg-accent py-[15px] text-[17px] font-black text-canvas disabled:opacity-35 transition-all active:scale-[.97]"
         >
           Enter score →
         </button>
@@ -209,7 +209,7 @@ export function PaintMode({
         {savedGames.length > 0 && (
           <button
             onClick={onEndSession}
-            className="mt-2 w-full rounded-xl border border-white/[.06] py-2.5 text-[13px] font-bold text-[#94a3b8] transition-colors hover:text-[#f0f0f8]"
+            className="mt-2 w-full rounded-xl border border-white/[.06] py-2.5 text-[13px] font-bold text-fg-dim transition-colors hover:text-fg"
           >
             End Session 📰
           </button>

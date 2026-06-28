@@ -104,27 +104,29 @@ export function ScoreKeypad({
     <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto overflow-hidden">
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[17px] font-black text-[#f0f0f8]">Courtside</span>
-            <span className="text-[11px] text-[#94a3b8]">· Game {gameCount + 1}</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="flex-none whitespace-nowrap flex items-baseline gap-1.5">
+              <span className="font-condensed text-[20px] font-bold uppercase tracking-wide gradient-accent leading-none">Courtside</span>
+              <span className="text-[11px] text-fg-dim whitespace-nowrap">· Game {gameCount + 1}</span>
+            </div>
             <LocationPill
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
             />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-none">
             <button
               onClick={onSquadChip}
-              className="flex items-center gap-1.5 rounded-full border border-white/[.08] bg-[#111118] px-2.5 py-1 text-[11px] font-bold text-[#94a3b8]"
+              className="whitespace-nowrap flex-none flex items-center gap-1.5 rounded-full border border-white/[.08] bg-surface px-2.5 py-1 text-[11px] font-semibold text-fg-dim"
             >
-              Squad · <b className="text-[#fb923c]">{squadCount}</b>
+              Squad <b className="bg-accent text-canvas rounded-full px-1.5 font-bold">{squadCount}</b>
             </button>
             <button
               onClick={onOpenNav}
               aria-label="App navigation"
-              className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-[#111118] text-[13px] leading-none text-[#94a3b8]"
+              className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-white/[.08] bg-surface text-[13px] leading-none text-fg-dim"
             >
               ⊞
             </button>
@@ -145,19 +147,19 @@ export function ScoreKeypad({
           <button
             onClick={() => setFocus(1)}
             className={`rounded-2xl border-2 pt-2.5 pb-2 px-2 text-center transition-all ${
-              focus === 1 ? 'border-[#3b82f6]' : 'border-white/[.06]'
-            } bg-[#1a1a28]`}
+              focus === 1 ? 'border-accent-cool' : 'border-white/[.06]'
+            } bg-surface-raised`}
           >
-            <div className="text-[10px] font-black uppercase tracking-[.1em] text-[#60a5fa] mb-0.5">Team 1</div>
+            <div className="text-[10px] font-black uppercase tracking-[.1em] text-accent-cool mb-0.5">Team 1</div>
             <div
               key={`n1-${pops[1]}`}
               className={`text-[44px] font-black leading-[1.05] min-h-[48px] [font-variant-numeric:tabular-nums] ${
-                t1Wins ? 'keypad-num-winner' : 'text-[#f0f0f8]'
+                t1Wins ? 'keypad-num-winner' : 'text-fg'
               } ${pops[1] > 0 ? 'keypad-num-pop' : ''}`}
             >
               {t1Score || <span className="opacity-20">–</span>}
             </div>
-            <div className="text-[11px] font-bold text-[#94a3b8] leading-snug min-h-[18px] mt-0.5">
+            <div className="text-[11px] font-bold text-fg-dim leading-snug min-h-[18px] mt-0.5">
               {teamAnchor(team1Players)}
             </div>
           </button>
@@ -166,19 +168,19 @@ export function ScoreKeypad({
           <button
             onClick={() => setFocus(2)}
             className={`rounded-2xl border-2 pt-2.5 pb-2 px-2 text-center transition-all ${
-              focus === 2 ? 'border-[#fb923c]' : 'border-white/[.06]'
-            } bg-[#1a1a28]`}
+              focus === 2 ? 'border-accent' : 'border-white/[.06]'
+            } bg-surface-raised`}
           >
-            <div className="text-[10px] font-black uppercase tracking-[.1em] text-[#fb923c] mb-0.5">Team 2</div>
+            <div className="text-[10px] font-black uppercase tracking-[.1em] text-accent mb-0.5">Team 2</div>
             <div
               key={`n2-${pops[2]}`}
               className={`text-[44px] font-black leading-[1.05] min-h-[48px] [font-variant-numeric:tabular-nums] ${
-                t2Wins ? 'keypad-num-winner' : 'text-[#f0f0f8]'
+                t2Wins ? 'keypad-num-winner' : 'text-fg'
               } ${pops[2] > 0 ? 'keypad-num-pop' : ''}`}
             >
               {t2Score || <span className="opacity-20">–</span>}
             </div>
-            <div className="text-[11px] font-bold text-[#94a3b8] leading-snug min-h-[18px] mt-0.5">
+            <div className="text-[11px] font-bold text-fg-dim leading-snug min-h-[18px] mt-0.5">
               {teamAnchor(team2Players)}
             </div>
           </button>
@@ -191,7 +193,7 @@ export function ScoreKeypad({
               key={key}
               onClick={() => pressKey(key)}
               className={`keypad-glass-key py-3 text-center select-none ${
-                key === '⌫' || key === '⇄' ? 'text-[14px] font-bold text-[#94a3b8]' : 'text-[21px] font-black text-[#f0f0f8]'
+                key === '⌫' || key === '⇄' ? 'text-[14px] font-bold text-fg-dim' : 'text-[21px] font-black text-fg'
               }`}
             >
               {key}
@@ -205,21 +207,21 @@ export function ScoreKeypad({
         <button
           onClick={() => { if (canSave) onSave() }}
           disabled={!canSave}
-          className="w-full rounded-[15px] bg-[#fb923c] py-[15px] text-[17px] font-black text-white disabled:opacity-35 transition-all active:scale-[.97]"
+          className="w-full rounded-[15px] bg-accent py-[15px] text-[17px] font-black text-canvas disabled:opacity-35 transition-all active:scale-[.97]"
         >
           {saving ? 'Saving…' : 'Save Game'}
         </button>
         <div className="flex items-center justify-between mt-2">
           <button
             onClick={onBack}
-            className="text-[13px] font-bold text-[#94a3b8] py-1 px-2"
+            className="text-[13px] font-bold text-fg-dim py-1 px-2"
           >
             ← Teams
           </button>
           {savedGames.length > 0 && (
             <button
               onClick={onEndSession}
-              className="text-[13px] font-bold text-[#94a3b8] py-1 px-2"
+              className="text-[13px] font-bold text-fg-dim py-1 px-2"
             >
               End Session 📰
             </button>
