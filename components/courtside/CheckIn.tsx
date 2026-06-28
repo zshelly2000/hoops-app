@@ -191,7 +191,7 @@ export function CheckIn({
             placeholder={inactiveMode ? 'Search inactive…' : 'Search players…'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-white/[.06] bg-surface-raised py-2 pl-3 pr-8 text-sm text-fg placeholder-fg-faint focus:border-accent focus:outline-none"
+            className="w-full rounded-xl border border-white/[.06] bg-surface-raised py-2 pl-3 pr-8 text-base text-fg placeholder-fg-faint focus:border-accent focus:outline-none"
           />
           {search && (
             <button
