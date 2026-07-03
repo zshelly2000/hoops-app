@@ -5,6 +5,7 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { UNIVERSE_ID } from '@/lib/universe'
 import type { NarrativeCandidate } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
@@ -1893,6 +1894,7 @@ export async function POST(request: Request) {
     const slate = buildSlate(candidates, playerMap)
 
     interface NarrativeInsert {
+      universe_id: string
       session_id: string
       narrative_type: string
       angle_used: string
@@ -1963,6 +1965,7 @@ export async function POST(request: Request) {
           const type = coerceType(story.type)
           const src = resolveSrc(type, story.headline)
           narrativesToInsert.push({
+            universe_id: UNIVERSE_ID,
             session_id,
             narrative_type: type,
             angle_used: 'editorial',
@@ -1984,7 +1987,7 @@ export async function POST(request: Request) {
     // narratives untouched (never wipe a good edition on a transient failure).
     // -----------------------------------------------------------------------
     if (narrativesToInsert.length > 0) {
-      await supabaseAdmin.from('narratives').delete().eq('session_id', session_id)
+      await supabaseAdmin.from('narratives').delete().eq('universe_id', UNIVERSE_ID).eq('session_id', session_id)
       await supabaseAdmin.from('narratives').insert(narrativesToInsert)
     }
 

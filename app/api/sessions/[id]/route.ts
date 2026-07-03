@@ -4,6 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { UNIVERSE_ID } from '@/lib/universe'
 import type { Session } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -34,6 +35,7 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin
     .from('sessions')
     .update(body)
+    .eq('universe_id', UNIVERSE_ID)
     .eq('id', params.id)
     .select()
     .single()

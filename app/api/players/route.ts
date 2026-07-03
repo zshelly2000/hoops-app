@@ -4,6 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { UNIVERSE_ID } from '@/lib/universe'
 import type { Player } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from('players')
     .select('id,name,nickname')
+    .eq('universe_id', UNIVERSE_ID)
 
   if (fetchError) {
     return NextResponse.json({ error: fetchError.message }, { status: 500, headers: NO_CACHE })
@@ -78,6 +80,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabaseAdmin
     .from('players')
     .insert({
+      universe_id: UNIVERSE_ID,
       name,
       nickname,
       is_active: true,
