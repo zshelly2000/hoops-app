@@ -5,7 +5,8 @@ import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { UNIVERSE_ID } from '@/lib/universe'
-import { displayToken, normalize, pinnedBadgeFor } from '@/lib/identity'
+import { displayToken, normalize } from '@/lib/identity'
+import { badgeDisplayName } from '@/lib/badges'
 import type { Player } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -96,11 +97,34 @@ export async function POST(request: Request) {
     )
   }
 
-  // ── Guard 3: a pinned-badge loser would orphan a name-keyed pin ───────────
-  const loserBadge = pinnedBadgeFor(loser)
-  if (loserBadge) {
+  // ── Guard 3: a loser who currently holds an all-time badge must survive ───
+  // Live check against badge_holders (recomputed nightly by hoops-stats).
+  // all_time only: monthly badges (rookie alone has ~105 holders, including
+  // every recent one-game player — exactly the population dedup merges target)
+  // must not block merges. An empty result passes: the player holds nothing,
+  // or the universe has no badges yet.
+  const { data: badgeData, error: badgeErr } = await supabaseAdmin
+    .from('badge_holders')
+    .select('badge_id')
+    .eq('universe_id', UNIVERSE_ID)
+    .eq('player_id', loserId)
+    .eq('badge_type', 'all_time')
+
+  // FAIL CLOSED: a guard that silently passes on failure is not a guard.
+  if (badgeErr) {
+    console.error('badge_holders lookup failed during merge:', badgeErr)
     return NextResponse.json(
-      { error: `${loser.name} holds a pinned badge (${loserBadge.badge}) — make them the survivor instead.` },
+      { error: 'Could not verify badge holders — merge blocked. Try again shortly.' },
+      { status: 503, headers: NO_CACHE },
+    )
+  }
+
+  const heldBadges = ((badgeData as { badge_id: string }[] | null) ?? []).map((r) =>
+    badgeDisplayName(r.badge_id),
+  )
+  if (heldBadges.length > 0) {
+    return NextResponse.json(
+      { error: `Cannot merge away ${loser.name} — current holder of: ${heldBadges.join(', ')}` },
       { status: 409, headers: NO_CACHE },
     )
   }

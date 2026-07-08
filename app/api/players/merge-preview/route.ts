@@ -3,7 +3,10 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { displayToken, normalize, pinnedBadgeFor } from '@/lib/identity'
+import { supabaseAdmin } from '@/lib/supabase-admin'
+import { UNIVERSE_ID } from '@/lib/universe'
+import { displayToken, normalize } from '@/lib/identity'
+import { badgeDisplayName } from '@/lib/badges'
 import type { Player } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -180,14 +183,28 @@ export async function GET(request: Request) {
     normalize(displayToken(playerA.name, playerA.nickname)) ===
       normalize(displayToken(playerB.name, playerB.nickname))
 
-  // Pinned badge held by either record (keyed by name — see lib/identity).
-  const badgeA = pinnedBadgeFor(playerA)
-  const badgeB = pinnedBadgeFor(playerB)
-  const pinnedBadge = badgeA
-    ? { id: a, badge: badgeA.badge, holderName: badgeA.holderName }
-    : badgeB
-      ? { id: b, badge: badgeB.badge, holderName: badgeB.holderName }
-      : null
+  // Current all-time badge holders among the two records, from the live
+  // badge_holders table (nightly, hoops-stats). Monthly badges are ignored —
+  // they don't block merges. Same guard the merge route enforces.
+  const { data: badgeData, error: badgeErr } = await supabaseAdmin
+    .from('badge_holders')
+    .select('player_id, badge_id')
+    .eq('universe_id', UNIVERSE_ID)
+    .in('player_id', [a, b])
+    .eq('badge_type', 'all_time')
+
+  if (badgeErr) {
+    return NextResponse.json({ error: badgeErr.message }, { status: 500, headers: NO_CACHE })
+  }
+
+  const badgeRows = (badgeData as { player_id: string; badge_id: string }[] | null) ?? []
+  const badgeHolders = [playerA, playerB]
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      badges: badgeRows.filter((r) => r.player_id === p.id).map((r) => badgeDisplayName(r.badge_id)),
+    }))
+    .filter((h) => h.badges.length > 0)
 
   const timeline = [...timelineFor('a', rowsA), ...timelineFor('b', rowsB)].sort((x, y) =>
     x.date.localeCompare(y.date),
@@ -202,7 +219,7 @@ export async function GET(request: Request) {
       sharedSessions,
       timeline,
       identicalTwin,
-      pinnedBadge,
+      badgeHolders,
       combinedGames,
       combinedFirstYear,
     },
