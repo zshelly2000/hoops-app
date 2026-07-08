@@ -32,7 +32,7 @@ interface MergePreview {
   sharedSessions: { sessionDate: string; aGames: number; bGames: number }[]
   timeline: TimelineBucket[]
   identicalTwin: boolean
-  pinnedBadge: { id: string; badge: string; holderName: string } | null
+  badgeHolders: { id: string; name: string; badges: string[] }[]
   combinedGames: number
   combinedFirstYear: number | null
 }
@@ -201,9 +201,9 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
     !!survivor && normalize(confirmText) === normalize(survivor.name) && !!displayName.trim()
   const needsTwinConfirm = !!preview?.identicalTwin
   const oppositeBlocked = (preview?.oppositeTeamGames ?? 0) > 0
-  const loserHoldsPin = !!preview?.pinnedBadge && preview.pinnedBadge.id === loser?.id
+  const loserBadges = preview?.badgeHolders.find((h) => h.id === loser?.id) ?? null
   // Hard blocks with no in-screen override — the merge cannot run as configured.
-  const mergeBlocked = oppositeBlocked || loserHoldsPin
+  const mergeBlocked = oppositeBlocked || !!loserBadges
 
   async function runMerge() {
     if (!survivor || !loser || !confirmReady || mergeBlocked) return
@@ -488,21 +488,21 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
                 duplicate slot is dropped automatically so no one shows up twice.
               </Flag>
             )}
-            {preview.pinnedBadge && (
-              <Flag tone="amber" title="Holds a pinned badge">
-                {preview.pinnedBadge.holderName} holds the pinned{' '}
-                <b className="text-[#f0f0f8]">{preview.pinnedBadge.badge}</b> badge.{' '}
-                {loserHoldsPin
+            {preview.badgeHolders.map((h) => (
+              <Flag key={h.id} tone="amber" title="Current badge holder">
+                {h.name} is the current holder of{' '}
+                <b className="text-[#f0f0f8]">{h.badges.join(', ')}</b>.{' '}
+                {h.id === loser?.id
                   ? 'They must be the survivor — flip the toggle above, or the merge will be blocked.'
-                  : 'They are the survivor, so the pin stays intact.'}
+                  : 'They are the survivor, so the badge record stays intact.'}
               </Flag>
-            )}
+            ))}
 
             <TierTag>⚪ For the record</TierTag>
             <Flag tone="plain" title="Summary">
               {gamesMoved} games move · {survivor.name} ends with {resultingTotal}
               {preview.combinedFirstYear ? ` · earliest game ${preview.combinedFirstYear} becomes the “since.”` : '.'}{' '}
-              {preview.pinnedBadge ? `${preview.pinnedBadge.holderName} holds a pinned badge.` : 'Neither record holds a pinned all-time badge.'}
+              {preview.badgeHolders.length > 0 ? `${preview.badgeHolders.map((h) => h.name).join(' and ')} currently hold${preview.badgeHolders.length === 1 ? 's' : ''} an all-time badge.` : 'Neither record currently holds an all-time badge.'}
             </Flag>
 
             {/* 6 — The eyeball test */}
@@ -541,7 +541,7 @@ export default function MergePlayerPage({ params }: { params: { id: string } }) 
               <p className="mb-2.5 rounded-[13px] border border-[#ef4444]/30 bg-[#ef4444]/[.08] px-3.5 py-3 text-[13px] leading-[1.55] text-[#fca5a5]">
                 {oppositeBlocked
                   ? `These records were opponents in ${preview.oppositeTeamGames} game${preview.oppositeTeamGames === 1 ? '' : 's'} — merging is blocked. If they really are one person, this isn't the tool for it.`
-                  : `${loser.name} holds the pinned ${preview.pinnedBadge?.badge} badge. Flip the survivor toggle above to keep them, then you can merge.`}
+                  : `${loser.name} is the current holder of ${loserBadges?.badges.join(', ')}. Flip the survivor toggle above to keep them, then you can merge.`}
               </p>
             ) : (
               <p className="mb-2.5 px-0.5 text-[13px] leading-[1.55] text-[#94a3b8]">

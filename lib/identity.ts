@@ -8,9 +8,9 @@
 /**
  * The single definition of "same identity" for comparison. Lowercase, trim,
  * strip apostrophes (straight and curly) and periods so punctuation drift
- * doesn't split one person in two ("Mark A'Ala" === "Mark Aala", "T.J." === "TJ"),
+ * doesn't split one person in two ("D'Angelo" === "DAngelo", "T.J." === "TJ"),
  * then collapse internal whitespace. Hyphens are intentionally left alone.
- * Pins, twin detection, and the duplicate-prevention guards all inherit this.
+ * Twin detection and the duplicate-prevention guards inherit this.
  */
 export function normalize(s: string): string {
   return s
@@ -58,33 +58,4 @@ export function levenshtein(a: string, b: string): number {
     ;[prev, curr] = [curr, prev]
   }
   return prev[n]
-}
-
-// ============================================================
-// Pinned all-time badges.
-// hoops-app has no badge system of its own (those live in the read-only
-// hoops-stats portal), so the pinned holders are keyed here by normalized name,
-// the only stable handle we have. Matching is name-based, via the shared `normalize`
-// (so it's case-, space-, and punctuation-insensitive).
-// ============================================================
-
-export interface PinnedBadge {
-  badge: string
-  holderName: string
-}
-
-export const PINNED_BADGES: PinnedBadge[] = [
-  { badge: 'Scorekeeper', holderName: 'Colin Montague' },
-  { badge: 'The Anchor', holderName: "Mark A'Ala" },
-  { badge: 'The Legend', holderName: 'Zach Knowlton' },
-]
-
-/**
- * Returns the pinned badge a player holds, matched by normalized name. Punctuation
- * folding (e.g. the canonical "Mark A'Ala" matching the stored "Mark Aala") comes
- * from `normalize` itself now — there is no pin-specific comparator.
- */
-export function pinnedBadgeFor(player: { name: string }): PinnedBadge | null {
-  const n = normalize(player.name)
-  return PINNED_BADGES.find((b) => normalize(b.holderName) === n) ?? null
 }
