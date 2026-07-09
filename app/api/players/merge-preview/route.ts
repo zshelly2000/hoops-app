@@ -98,6 +98,7 @@ export async function GET(request: Request) {
   const { data: playersData, error: playersErr } = await supabase
     .from('players')
     .select('*')
+    .eq('universe_id', UNIVERSE_ID)
     .in('id', [a, b])
 
   if (playersErr) {
@@ -126,6 +127,7 @@ export async function GET(request: Request) {
         sessions ( session_date )
       )
     `)
+    .eq('universe_id', UNIVERSE_ID)
     .in('player_id', [a, b])
 
   if (gpErr) {
