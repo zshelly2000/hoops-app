@@ -75,11 +75,14 @@ interface OpponentStatRow {
 
 interface GameStrengthRow {
   game_id: string
-  team1_strength: number
-  team2_strength: number
-  stronger_team: 1 | 2 | null
-  is_upset: boolean
-  upset_margin: number
+  session_id: string
+  session_date: string
+  winning_team: 1 | 2 | null
+  team1_rapm: number | null
+  team2_rapm: number | null
+  rapm_diff: number | null
+  weaker_team: 1 | 2 | null
+  universe_id: string
 }
 
 type PlayerName = { name: string; nickname: string | null }
@@ -428,30 +431,62 @@ function detectRivalry(
 // Pattern detector: upset
 // ---------------------------------------------------------------------------
 
+// The platform-wide upset definition, mirroring the player_upset_wins view:
+// the weaker team on paper wins AND the RAPM gap is at least this threshold.
+const UPSET_RAPM_DIFF_MIN = 0.1
+
 function detectUpset(
   gameStrength: GameStrengthRow[],
   games: RawGame[],
+  gamePlayers: RawGamePlayer[],
 ): NarrativeCandidate | null {
-  const upsets = gameStrength.filter((gs) => gs.is_upset)
+  const upsets = gameStrength.filter(
+    (gs) =>
+      gs.rapm_diff !== null &&
+      gs.rapm_diff >= UPSET_RAPM_DIFF_MIN &&
+      gs.winning_team !== null &&
+      gs.winning_team === gs.weaker_team,
+  )
   if (upsets.length === 0) return null
 
-  upsets.sort((a, b) => b.upset_margin - a.upset_margin)
+  upsets.sort((a, b) => (b.rapm_diff ?? 0) - (a.rapm_diff ?? 0))
   const best = upsets[0]
 
   const game = games.find((g) => g.id === best.game_id)
-  if (!game) return null
+  if (!game || best.winning_team === null || best.rapm_diff === null) return null
+
+  const gamePlayersInGame = gamePlayers.filter((gp) => gp.game_id === game.id)
+  const team1Players = gamePlayersInGame.filter((gp) => gp.team === 1).map((gp) => displayName(gp.players))
+  const team2Players = gamePlayersInGame.filter((gp) => gp.team === 2).map((gp) => displayName(gp.players))
+
+  // Winner attribution comes from the view's winning_team (which, for an upset,
+  // IS the weaker team) — pre-computed here so the editor copies, never derives.
+  const winnerPlayers = best.winning_team === 1 ? team1Players : team2Players
+  const loserPlayers = best.winning_team === 1 ? team2Players : team1Players
+  const winnerScore = best.winning_team === 1 ? game.team1_score : game.team2_score
+  const loserScore = best.winning_team === 1 ? game.team2_score : game.team1_score
 
   return {
     narrative_type: 'upset',
-    headline_hint: `Upset: weaker team won by ${best.upset_margin.toFixed(1)} strength pts, score ${game.team1_score}-${game.team2_score}`,
+    headline_hint: `Upset: weaker team on paper won ${winnerScore}-${loserScore}, RAPM gap ${best.rapm_diff.toFixed(2)}`,
     body_data: {
       game_id: best.game_id,
-      upset_margin: best.upset_margin,
+      game_number: game.game_number,
+      total_games_in_session: games.length,
       team1_score: game.team1_score,
       team2_score: game.team2_score,
+      team1_players: team1Players,
+      team2_players: team2Players,
+      winning_team: best.winning_team,
+      weaker_team: best.weaker_team,
+      rapm_diff: best.rapm_diff,
+      winner_players: winnerPlayers,
+      loser_players: loserPlayers,
+      winner_score: winnerScore,
+      loser_score: loserScore,
     },
     player_ids: [],
-    priority: Math.round(best.upset_margin * 15),
+    priority: Math.round(best.rapm_diff * 100),
     angle_options: ['nobody_saw_it', 'David_and_Goliath', 'numbers_dont_lie', 'chaos', 'belief'],
   }
 }
@@ -1348,6 +1383,19 @@ function buildSlate(
         tonight = { game_number: b.game_number, result, combined: b.combined }
         break
       }
+      case 'upset': {
+        // Winner-attributed result plus a pre-formatted strength-gap fact — the
+        // winners ARE the weaker team on paper, so both strings are copy-only.
+        const winP = (b.winner_players as string[]) ?? []
+        const loseP = (b.loser_players as string[]) ?? []
+        const diff = b.rapm_diff as number
+        tonight = {
+          game_number: b.game_number,
+          result: `${winP.join('/')} beat ${loseP.join('/')} ${b.winner_score}-${b.loser_score}`,
+          upset: `the winners were the weaker team on paper — the losing side was stronger by ${diff.toFixed(2)} RAPM`,
+        }
+        break
+      }
       case 'individual_streak':
       case 'cold_streak':
         // No rank: streak detectors carry an all-players rank, not the 5+-games
@@ -1801,7 +1849,7 @@ export async function POST(request: Request) {
       () => detectIndividualStreak(sessionPlayerIds, gameLog, playerMap, playerStats),
       () => detectColdStreak(sessionPlayerIds, gameLog, playerMap, playerStats),
       () => detectRivalry(sessionPlayerIds, opponentStats, playerMap, playerStats, gamePlayers, games),
-      () => detectUpset(gameStrength, games),
+      () => detectUpset(gameStrength, games, gamePlayers),
       () => detectClimber(sessionPlayerIds, playerStats, gameLog, sessionGameIds, playerMap),
       () => detectSessionRecap(games, gamePlayers, gameLog, sessionGameIds, playerStats, playerMap),
       () => detectDefensiveBattle(games, gamePlayers),
