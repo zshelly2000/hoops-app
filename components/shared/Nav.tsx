@@ -84,5 +84,14 @@ export function NavBar() {
 export function Nav() {
   const pathname = usePathname()
   if (pathname.startsWith('/courtside')) return null
+  // Auth/system screens stand alone — no app chrome until you're in a universe.
+  if (
+    pathname.startsWith('/login') ||
+    pathname === '/update-password' ||
+    pathname === '/no-universe' ||
+    pathname === '/pick-universe'
+  ) {
+    return null
+  }
   return <NavBar />
 }
