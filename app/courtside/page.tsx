@@ -9,6 +9,7 @@ import { PostGameChips } from '@/components/courtside/PostGameChips'
 import { AddPlayerModal } from '@/components/courtside/AddPlayerModal'
 import { ShareRundown } from '@/components/courtside/ShareRundown'
 import { NavBar, navLinks } from '@/components/shared/Nav'
+import { AccountRow } from '@/components/shared/AccountRow'
 import Link from 'next/link'
 import { InlineLocationPicker, getDefaultLocation, saveDefaultLocation } from '@/components/courtside/LocationPill'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
@@ -1016,6 +1017,7 @@ export default function CourtsidePage() {
                 </li>
               ))}
             </ul>
+            <AccountRow />
             <button
               onClick={() => setShowNavSheet(false)}
               className="mt-3 w-full rounded-xl border border-white/[.06] py-2.5 text-[13px] font-bold text-[#94a3b8]"
