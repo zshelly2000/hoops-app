@@ -4,12 +4,16 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import type { Session } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 export async function GET(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
 
@@ -20,6 +24,7 @@ export async function GET(request: Request) {
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
+      .eq('universe_id', universeId)
       .eq('session_date', date)
 
     if (error) {
@@ -36,6 +41,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from('sessions')
     .select('*, games!inner(id)')
+    .eq('universe_id', universeId)
     .order('session_date', { ascending: false })
 
   if (error) {
@@ -46,12 +52,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const body = await request.json() as { session_date: string; location?: string; notes?: string }
 
   const { data, error } = await supabaseAdmin
     .from('sessions')
     .insert({
-      universe_id: UNIVERSE_ID,
+      universe_id: universeId,
       session_date: body.session_date,
       location: body.location ?? 'Natomas',
       notes: body.notes ?? null,
@@ -65,7 +75,7 @@ export async function POST(request: Request) {
       const { data: existing } = await supabase
         .from('sessions')
         .select('*')
-        .eq('universe_id', UNIVERSE_ID)
+        .eq('universe_id', universeId)
         .eq('session_date', body.session_date)
         .single()
       return NextResponse.json(existing as unknown as Session, { headers: NO_CACHE })

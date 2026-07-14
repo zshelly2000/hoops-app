@@ -5,7 +5,7 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import type { NarrativeCandidate } from '@/lib/types'
 
 // ---------------------------------------------------------------------------
@@ -1709,6 +1709,10 @@ function buildFallbackEdition(
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
 export async function POST(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   try {
     const body = (await request.json()) as { session_id: string }
     const { session_id } = body
@@ -1721,8 +1725,8 @@ export async function POST(request: Request) {
     // Phase 1 — fetch session and games (game IDs needed for phase 2)
     // -----------------------------------------------------------------------
     const [sessionRes, gamesRes] = await Promise.all([
-      supabase.from('sessions').select('*').eq('id', session_id).single(),
-      supabase.from('games').select('*').eq('session_id', session_id),
+      supabase.from('sessions').select('*').eq('universe_id', universeId).eq('id', session_id).single(),
+      supabase.from('games').select('*').eq('universe_id', universeId).eq('session_id', session_id),
     ])
 
     if (sessionRes.error || !sessionRes.data) {
@@ -2013,7 +2017,7 @@ export async function POST(request: Request) {
           const type = coerceType(story.type)
           const src = resolveSrc(type, story.headline)
           narrativesToInsert.push({
-            universe_id: UNIVERSE_ID,
+            universe_id: universeId,
             session_id,
             narrative_type: type,
             angle_used: 'editorial',
@@ -2035,7 +2039,7 @@ export async function POST(request: Request) {
     // narratives untouched (never wipe a good edition on a transient failure).
     // -----------------------------------------------------------------------
     if (narrativesToInsert.length > 0) {
-      await supabaseAdmin.from('narratives').delete().eq('universe_id', UNIVERSE_ID).eq('session_id', session_id)
+      await supabaseAdmin.from('narratives').delete().eq('universe_id', universeId).eq('session_id', session_id)
       await supabaseAdmin.from('narratives').insert(narrativesToInsert)
     }
 

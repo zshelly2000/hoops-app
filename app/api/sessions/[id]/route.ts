@@ -4,7 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import type { Session } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -13,9 +13,13 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+
   const { data, error } = await supabase
     .from('sessions')
     .select('*')
+    .eq('universe_id', gate.ctx.universeId)
     .eq('id', params.id)
     .single()
 
@@ -30,12 +34,15 @@ export async function PATCH(
   request: Request,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+
   const body = await request.json() as Record<string, unknown>
 
   const { data, error } = await supabaseAdmin
     .from('sessions')
     .update(body)
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', gate.ctx.universeId)
     .eq('id', params.id)
     .select()
     .single()

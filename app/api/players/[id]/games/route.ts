@@ -3,6 +3,7 @@ export const revalidate = 0
 
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { requireUniverse } from '@/lib/universe'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
@@ -23,6 +24,9 @@ export async function GET(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+
   const { data, error } = await supabase
     .from('game_players')
     .select(`
@@ -37,6 +41,7 @@ export async function GET(
         sessions ( session_date )
       )
     `)
+    .eq('universe_id', gate.ctx.universeId)
     .eq('player_id', params.id)
     .order('created_at', { ascending: false })
     .limit(100)

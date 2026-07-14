@@ -4,7 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import type { Player } from '@/lib/types'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
@@ -33,9 +33,13 @@ function duplicateIdentity409(name: string, nickname: string | null) {
 }
 
 export async function GET() {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+
   const { data, error } = await supabase
     .from('players')
     .select('*')
+    .eq('universe_id', gate.ctx.universeId)
     .order('name')
 
   if (error) {
@@ -46,6 +50,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const body = await request.json() as { name: string; nickname?: string }
 
   if (!body.name?.trim()) {
@@ -59,7 +67,7 @@ export async function POST(request: Request) {
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from('players')
     .select('id,name,nickname')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
 
   if (fetchError) {
     return NextResponse.json({ error: fetchError.message }, { status: 500, headers: NO_CACHE })
@@ -80,7 +88,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabaseAdmin
     .from('players')
     .insert({
-      universe_id: UNIVERSE_ID,
+      universe_id: universeId,
       name,
       nickname,
       is_active: true,

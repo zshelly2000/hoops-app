@@ -4,7 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 
 const NO_CACHE = { 'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate' }
 
@@ -12,10 +12,14 @@ export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const { data, error } = await supabaseAdmin
     .from('games')
     .delete()
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .eq('id', params.id)
     .select('id, session_id')
 
@@ -35,7 +39,7 @@ export async function DELETE(
   const { data: remaining, error: remainErr } = await supabase
     .from('games')
     .select('id')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .eq('session_id', sessionId)
     .limit(1)
 
@@ -47,12 +51,12 @@ export async function DELETE(
     const { data: sess } = await supabase
       .from('sessions')
       .select('id, is_complete')
-      .eq('universe_id', UNIVERSE_ID)
+      .eq('universe_id', universeId)
       .eq('id', sessionId)
       .single()
 
     // Best-effort — if this fails the game is still deleted; don't surface the error
-    await supabaseAdmin.from('sessions').delete().eq('universe_id', UNIVERSE_ID).eq('id', sessionId)
+    await supabaseAdmin.from('sessions').delete().eq('universe_id', universeId).eq('id', sessionId)
 
     // If the deleted session was complete, find the previous complete session so the
     // client can trigger narrative regeneration directly from the browser.
@@ -62,7 +66,7 @@ export async function DELETE(
       const { data: prevSession } = await supabase
         .from('sessions')
         .select('id')
-        .eq('universe_id', UNIVERSE_ID)
+        .eq('universe_id', universeId)
         .eq('is_complete', true)
         .neq('id', sessionId)
         .order('session_date', { ascending: false })
