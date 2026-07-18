@@ -15,6 +15,7 @@ function isMembershipExempt(pathname: string): boolean {
     isPublicPath(pathname) ||
     pathname === '/no-universe' ||
     pathname === '/pick-universe' ||
+    pathname === '/create' ||
     pathname === '/update-password'
   )
 }

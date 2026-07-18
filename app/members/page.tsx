@@ -237,6 +237,13 @@ export default function MembersPage() {
                 </div>
               </form>
             )}
+            {isOwner && (
+              <p className="mt-8 text-center text-xs">
+                <Link href="/create" className="text-slate-400 transition-colors hover:text-slate-300">
+                  Create another universe →
+                </Link>
+              </p>
+            )}
           </>
         )}
       </div>
