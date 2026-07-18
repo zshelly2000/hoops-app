@@ -4,7 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import { displayToken, normalize } from '@/lib/identity'
 import { badgeDisplayName } from '@/lib/badges'
 import type { Player } from '@/lib/types'
@@ -83,6 +83,10 @@ function timelineFor(record: 'a' | 'b', rows: GPRow[]): TimelineBucket[] {
 }
 
 export async function GET(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const { searchParams } = new URL(request.url)
   const a = searchParams.get('a')
   const b = searchParams.get('b')
@@ -98,7 +102,7 @@ export async function GET(request: Request) {
   const { data: playersData, error: playersErr } = await supabase
     .from('players')
     .select('*')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .in('id', [a, b])
 
   if (playersErr) {
@@ -127,7 +131,7 @@ export async function GET(request: Request) {
         sessions ( session_date )
       )
     `)
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .in('player_id', [a, b])
 
   if (gpErr) {
@@ -191,7 +195,7 @@ export async function GET(request: Request) {
   const { data: badgeData, error: badgeErr } = await supabaseAdmin
     .from('badge_holders')
     .select('player_id, badge_id')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .in('player_id', [a, b])
     .eq('badge_type', 'all_time')
 

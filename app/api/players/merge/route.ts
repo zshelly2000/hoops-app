@@ -4,7 +4,7 @@ export const revalidate = 0
 import { NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { supabaseAdmin } from '@/lib/supabase-admin'
-import { UNIVERSE_ID } from '@/lib/universe'
+import { requireUniverse } from '@/lib/universe'
 import { displayToken, normalize } from '@/lib/identity'
 import { badgeDisplayName } from '@/lib/badges'
 import type { Player } from '@/lib/types'
@@ -26,6 +26,10 @@ interface MergeBody {
 }
 
 export async function POST(request: Request) {
+  const gate = await requireUniverse()
+  if (!gate.ctx) return gate.error
+  const universeId = gate.ctx.universeId
+
   const body = (await request.json()) as Partial<MergeBody>
   const { survivorId, loserId, confirmTwin } = body
   const displayName = body.displayName
@@ -45,7 +49,7 @@ export async function POST(request: Request) {
   const { data: playersData, error: playersErr } = await supabase
     .from('players')
     .select('*')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .in('id', [survivorId, loserId])
 
   if (playersErr) {
@@ -63,7 +67,7 @@ export async function POST(request: Request) {
   const { data: gpData, error: gpErr } = await supabase
     .from('game_players')
     .select('player_id, team, game_id')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .in('player_id', [survivorId, loserId])
 
   if (gpErr) {
@@ -106,7 +110,7 @@ export async function POST(request: Request) {
   const { data: badgeData, error: badgeErr } = await supabaseAdmin
     .from('badge_holders')
     .select('badge_id')
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .eq('player_id', loserId)
     .eq('badge_type', 'all_time')
 
@@ -156,7 +160,7 @@ export async function POST(request: Request) {
     const { error: dedupErr } = await supabaseAdmin
       .from('game_players')
       .delete()
-      .eq('universe_id', UNIVERSE_ID)
+      .eq('universe_id', universeId)
       .eq('player_id', loserId)
       .in('game_id', sameTeamGameIds)
     if (dedupErr) {
@@ -170,7 +174,7 @@ export async function POST(request: Request) {
   const { data: movedRows, error: reassignErr } = await supabaseAdmin
     .from('game_players')
     .update({ player_id: survivorId })
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .eq('player_id', loserId)
     .select('id')
   if (reassignErr) {
@@ -189,7 +193,7 @@ export async function POST(request: Request) {
       nickname: finalNickname,
       is_active: survivor.is_active || loser.is_active,
     })
-    .eq('universe_id', UNIVERSE_ID)
+    .eq('universe_id', universeId)
     .eq('id', survivorId)
   if (identityErr) {
     return NextResponse.json({ error: `Identity update failed: ${identityErr.message}` }, { status: 500, headers: NO_CACHE })
@@ -210,7 +214,7 @@ export async function POST(request: Request) {
   ]
   for (const { table, cols } of restrictingDerived) {
     const orFilter = cols.map((c) => `${c}.eq.${loserId}`).join(',')
-    const { error: derivedErr } = await supabaseAdmin.from(table).delete().eq('universe_id', UNIVERSE_ID).or(orFilter)
+    const { error: derivedErr } = await supabaseAdmin.from(table).delete().eq('universe_id', universeId).or(orFilter)
     if (derivedErr) {
       return NextResponse.json(
         { error: `Clearing ${table} for the merge failed: ${derivedErr.message}` },
@@ -222,7 +226,7 @@ export async function POST(request: Request) {
   // 5. Delete the loser. By now game_players and the restricting derived tables
   //    no longer reference it, so the ON DELETE RESTRICT FKs are satisfied. If
   //    some other FK still blocks it, surface the error rather than forcing.
-  const { error: deleteErr } = await supabaseAdmin.from('players').delete().eq('universe_id', UNIVERSE_ID).eq('id', loserId)
+  const { error: deleteErr } = await supabaseAdmin.from('players').delete().eq('universe_id', universeId).eq('id', loserId)
   if (deleteErr) {
     return NextResponse.json(
       {

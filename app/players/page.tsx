@@ -46,12 +46,20 @@ export default function PlayersPage() {
       <div className="mx-auto max-w-lg px-4">
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-black text-white">Roster</h1>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="rounded-xl bg-orange-400 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-300"
-          >
-            + Add Player
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/members"
+              className="rounded-xl bg-surface-raised px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-[#222236]"
+            >
+              Members
+            </Link>
+            <button
+              onClick={() => setShowAdd(true)}
+              className="rounded-xl bg-orange-400 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-300"
+            >
+              + Add Player
+            </button>
+          </div>
         </div>
 
         <label className="mb-4 flex cursor-pointer items-center gap-2 text-sm text-slate-400">
