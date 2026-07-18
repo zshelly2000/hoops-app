@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { SignOutButton } from '@/components/shared/SignOutButton'
-import type { MembersPayload } from '@/app/api/members/route'
+import type { MemberEntry, MembersPayload } from '@/app/api/members/route'
 
 export default function MembersPage() {
   const [data, setData] = useState<MembersPayload | null>(null)
@@ -13,6 +13,7 @@ export default function MembersPage() {
   const [inviteRole, setInviteRole] = useState<'organizer' | 'owner'>('organizer')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState<MemberEntry | null>(null)
 
   async function load() {
     setLoading(true)
@@ -31,6 +32,15 @@ export default function MembersPage() {
   useEffect(() => { void load() }, [])
 
   const isOwner = data?.you.role === 'owner'
+  const ownerCount = data?.members.filter((m) => m.role === 'owner').length ?? 0
+
+  // Mirrors the DELETE route's rules so no dead-end button renders: the root
+  // owner is unremovable, and you can't remove yourself as the last owner.
+  function canRemove(member: MemberEntry): boolean {
+    if (!isOwner || member.is_root_owner) return false
+    if (member.is_you && member.role === 'owner' && ownerCount <= 1) return false
+    return true
+  }
 
   async function addInvite(e: React.FormEvent) {
     e.preventDefault()
@@ -86,6 +96,7 @@ export default function MembersPage() {
       setActionError(err instanceof Error ? err.message : 'Failed to remove member')
     } finally {
       setBusy(false)
+      setConfirmRemove(null)
     }
   }
 
@@ -148,9 +159,9 @@ export default function MembersPage() {
                     >
                       {member.role}
                     </span>
-                    {isOwner && !member.is_root_owner && (
+                    {canRemove(member) && (
                       <button
-                        onClick={() => removeMember(member.user_id)}
+                        onClick={() => setConfirmRemove(member)}
                         disabled={busy}
                         className="rounded-lg bg-red-900/40 px-2.5 py-1 text-xs font-semibold text-red-400 hover:bg-red-900/70 disabled:opacity-50"
                       >
@@ -229,6 +240,42 @@ export default function MembersPage() {
           </>
         )}
       </div>
+
+      {confirmRemove && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={() => setConfirmRemove(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/[.06] bg-[#111118] px-5 py-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-center text-lg font-black text-[#f0f0f8]">
+              Remove {confirmRemove.name ?? confirmRemove.email ?? 'this member'}?
+            </p>
+            <p className="mt-1 text-center text-sm text-slate-400">
+              {confirmRemove.is_you
+                ? 'You will lose access to this universe.'
+                : 'They lose access immediately. You can re-invite them later.'}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setConfirmRemove(null)}
+                className="rounded-xl border border-white/[.06] py-3 text-sm font-bold text-[#f0f0f8] hover:bg-[#1a1a28]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void removeMember(confirmRemove.user_id)}
+                disabled={busy}
+                className="rounded-xl bg-red-900/40 py-3 text-sm font-bold text-red-400 hover:bg-red-900/70 disabled:opacity-50"
+              >
+                {busy ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -10,7 +10,17 @@ const links = [
   { href: '/players', label: 'Roster', icon: '👥' },
 ]
 
+// The courtside ⊞ sheet still offers all four app links, Stats included.
 export { links as navLinks }
+
+// Bottom-bar set: Stats swapped out for Members (live-testing decision) —
+// the dashboard stays reachable from the courtside sheet.
+const barLinks = [
+  { href: '/courtside', label: 'Courtside', icon: '🏀' },
+  { href: '/members', label: 'Members', icon: '🧑‍🤝‍🧑' },
+  { href: '/sessions', label: 'Sessions', icon: '📅' },
+  { href: '/players', label: 'Roster', icon: '👥' },
+]
 
 // Inline SVG icons for the bottom bar (portal set). Keyed by href; the on-demand
 // nav sheet keeps the emoji from `links` above.
@@ -41,6 +51,15 @@ function NavIcon({ href }: { href: string }) {
           <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
         </svg>
       )
+    case '/members':
+      // Outlined users pair — distinct from the filled Roster group icon.
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-5 w-5">
+          <circle cx="9" cy="8" r="3.25" />
+          <path d="M2.75 19.25c0-3 2.8-4.75 6.25-4.75s6.25 1.75 6.25 4.75" />
+          <path d="M16.5 5.5a3.25 3.25 0 0 1 0 5.5M17.9 14.9c2 .7 3.35 2.1 3.35 4.35" />
+        </svg>
+      )
     default:
       return null
   }
@@ -55,7 +74,7 @@ export function NavBar() {
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-safe">
       <div className="glass-nav mx-auto mb-3 max-w-lg overflow-hidden">
         <ul className="flex p-1.5">
-          {links.map((link) => {
+          {barLinks.map((link) => {
             const active = pathname.startsWith(link.href)
             return (
               <li key={link.href} className="flex-1">
