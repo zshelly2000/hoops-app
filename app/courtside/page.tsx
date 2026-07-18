@@ -129,6 +129,7 @@ export default function CourtsidePage() {
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [pendingBanner, setPendingBanner] = useState(false)
   const [showEndSession, setShowEndSession] = useState(false)
+  const [showDiscardSession, setShowDiscardSession] = useState(false)
   const [shareSessionId, setShareSessionId] = useState<string | null>(null)
   const [showNavSheet, setShowNavSheet] = useState(false)
   const [showLocationChange, setShowLocationChange] = useState(false)
@@ -728,6 +729,44 @@ export default function CourtsidePage() {
     }).catch(() => {})
   }
 
+  // ─── Discard session (zero games only) ────────────────────────────────────────
+
+  // A session is discardable only when nothing is logged anywhere: no saved
+  // games (gameCount counts optimistic saves too) and nothing queued offline
+  // for it — a queued POST after a delete would fail against a gone session.
+  const canDiscardSession =
+    session !== null &&
+    gameCount === 0 &&
+    !queue.some((i) => i.type === 'game' && i.sessionId === session.id)
+
+  async function handleDiscardSession() {
+    if (!session || !canDiscardSession) return
+    const sessionId = session.id
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('discard failed')
+    } catch {
+      showToast('Failed to discard session', 'error')
+      return
+    }
+
+    setShowDiscardSession(false)
+    setShowNavSheet(false)
+    setSession(null)
+    setGameCount(0)
+    setAssignments(new Map())
+    setT1Score('')
+    setT2Score('')
+    setSavedGames([])
+    setSquadIds(new Set())
+    setSquadOrder([])
+    setScreen('start')
+    localStorage.removeItem(squadKey(sessionId))
+    localStorage.removeItem(draftKey(sessionId))
+    showToast('Session discarded — nothing was logged')
+  }
+
   // ─── Location change ──────────────────────────────────────────────────────────
 
   function handleLocationChange(loc: string) {
@@ -981,6 +1020,35 @@ export default function CourtsidePage() {
         </div>
       )}
 
+      {/* ── Discard session confirm (zero-game sessions only) ── */}
+      {showDiscardSession && session && canDiscardSession && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
+          <div className="w-full max-w-lg rounded-t-3xl bg-[#111118] px-6 pb-12 pt-6 shadow-2xl">
+            <div className="mb-1 text-center text-xl font-black text-[#f0f0f8]">
+              Discard this session?
+            </div>
+            <p className="mb-4 text-center text-sm text-[#94a3b8]">
+              No games were logged. This deletes today&apos;s empty session — it
+              won&apos;t appear in your history, and no Rundown is generated.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                onClick={() => setShowDiscardSession(false)}
+                className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#f0f0f8] transition-all hover:bg-[#1a1a28] active:scale-95"
+              >
+                Keep session
+              </button>
+              <button
+                onClick={() => void handleDiscardSession()}
+                className="rounded-2xl border border-red-400/25 py-4 text-base font-bold text-red-400 transition-all hover:bg-red-400/10 active:scale-95"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Share the Rundown (post–End Session) ── */}
       {shareSessionId && (
         <ShareRundown sessionId={shareSessionId} onClose={() => setShareSessionId(null)} />
@@ -1017,6 +1085,15 @@ export default function CourtsidePage() {
                 </li>
               ))}
             </ul>
+            {canDiscardSession && (
+              <button
+                onClick={() => { setShowNavSheet(false); setShowDiscardSession(true) }}
+                className="mt-2 flex w-full items-center justify-between rounded-2xl border border-red-400/20 bg-[#1a1a28] px-4 py-3 text-left transition-colors hover:border-red-400/40"
+              >
+                <span className="text-[13px] font-bold text-red-400">Discard session</span>
+                <span className="text-[11px] font-semibold text-[#555570]">No games logged yet</span>
+              </button>
+            )}
             <AccountRow />
             <button
               onClick={() => setShowNavSheet(false)}
