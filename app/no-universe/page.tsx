@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getSupabaseServer } from '@/lib/supabase-server'
 import { claimInvitesForUser } from '@/lib/invite-claim'
@@ -45,6 +46,19 @@ export default async function NoUniversePage() {
               emails. Check your inbox for the confirmation link.
             </p>
           )}
+        </div>
+
+        <div className="mt-6 rounded-xl border border-white/[.06] bg-surface-raised px-4 py-4 text-left">
+          <p className="text-sm font-semibold text-fg">Have an invite code?</p>
+          <p className="mt-1 text-xs leading-relaxed text-fg-dim">
+            Organizers with a universe-creation code can start their own run.
+          </p>
+          <Link
+            href="/create"
+            className="mt-3 inline-block rounded-xl border border-white/[.1] px-4 py-2 text-sm font-bold text-fg hover:border-accent transition-all"
+          >
+            Create your universe
+          </Link>
         </div>
 
         <div className="mt-6 flex justify-center">
