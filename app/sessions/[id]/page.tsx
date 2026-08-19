@@ -35,8 +35,9 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
   const [confirmDelete, setConfirmDelete] = useState<GameRow | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
-  const [reopening, setReopening] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const [deletingSession, setDeletingSession] = useState(false)
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type, key: Date.now() })
@@ -70,21 +71,53 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
 
   const { isRefreshing } = usePullToRefresh(load)
 
-  async function handleReopen() {
+  // Append games to this session. Crucially does NOT flip is_complete — the old
+  // reopen-then-navigate flow stranded any non-today session (courtside resolved
+  // the active session by today's date and never found it, leaving it open and
+  // invisible). Courtside now loads the session by ID from the query param and,
+  // on exit, completes it only if it was open. Same-day or 2019 — same path.
+  function handleAddMoreGames() {
     if (!session) return
-    setReopening(true)
+    router.push(`/courtside?session=${session.id}`)
+  }
+
+  // Close out an open (is_complete=false) session directly, without adding games:
+  // mark it complete and regenerate its Rundown from the browser. This is the
+  // recovery action for a stranded session that already has games.
+  async function handleCloseSession() {
+    if (!session) return
+    setClosing(true)
     try {
-      const res = await fetch(`/api/sessions/${session.id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/sessions/${session.id}/complete`, { method: 'PATCH' })
+      if (!res.ok) throw new Error('Failed to close session')
+      setSession({ ...session, is_complete: true })
+      showToast('Session closed — Rundown regenerating')
+      // Browser-fired narrative generation (Vercel kills server-side fire-and-forget).
+      fetch('/api/narratives/generate', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_complete: false, completed_at: null }),
-      })
-      if (!res.ok) throw new Error('Failed to reopen session')
-      router.push('/courtside')
+        body: JSON.stringify({ session_id: session.id }),
+      }).catch(() => {})
+      router.refresh()
     } catch {
-      showToast('Failed to reopen session', 'error')
+      showToast('Failed to close session', 'error')
     } finally {
-      setReopening(false)
+      setClosing(false)
+    }
+  }
+
+  // Delete a stranded zero-game session outright. The server guards that it has
+  // no games (409 otherwise), so this is only reachable for genuine empties.
+  async function handleDeleteSession() {
+    if (!session) return
+    setDeletingSession(true)
+    try {
+      const res = await fetch(`/api/sessions/${session.id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete session')
+      router.push('/sessions')
+    } catch {
+      showToast('Failed to delete session', 'error')
+      setDeletingSession(false)
     }
   }
 
@@ -171,20 +204,25 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
           </h1>
           <p className="text-sm text-slate-400">
             {games.length} games · {uniquePlayers} players
-            {session.is_complete && (
+            {session.is_complete ? (
               <span className="ml-2 rounded-full bg-surface-raised px-2 py-0.5 text-xs text-slate-400">
                 Complete
               </span>
+            ) : (
+              <span className="ml-2 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-300">
+                Open
+              </span>
             )}
           </p>
+
+          {/* Completed session: append more games or regenerate the Rundown. */}
           {session.is_complete && (
             <div className="mt-3 flex gap-2">
               <button
-                onClick={handleReopen}
-                disabled={reopening}
-                className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:border-white/20 hover:text-[#f0f0f8] disabled:opacity-50"
+                onClick={handleAddMoreGames}
+                className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:border-white/20 hover:text-[#f0f0f8]"
               >
-                {reopening ? 'Reopening…' : 'Add More Games'}
+                Add More Games
               </button>
               <button
                 onClick={handleRegenerateRundown}
@@ -193,6 +231,38 @@ export default function SessionDetailPage({ params }: { params: { id: string } }
               >
                 {regenerating ? 'Regenerating…' : 'Regenerate Rundown 🔄'}
               </button>
+            </div>
+          )}
+
+          {/* Open (stranded) session — recovery controls. With games: append more
+              or close it out. Zero games: delete the empty shell. */}
+          {!session.is_complete && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {games.length > 0 ? (
+                <>
+                  <button
+                    onClick={handleAddMoreGames}
+                    className="rounded-lg border border-white/[.06] px-3 py-1.5 text-xs font-semibold text-slate-400 transition-colors hover:border-white/20 hover:text-[#f0f0f8]"
+                  >
+                    Add More Games
+                  </button>
+                  <button
+                    onClick={handleCloseSession}
+                    disabled={closing}
+                    className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-colors hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    {closing ? 'Closing…' : 'Close session'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={handleDeleteSession}
+                  disabled={deletingSession}
+                  className="rounded-lg border border-red-400/25 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors hover:bg-red-400/10 disabled:opacity-50"
+                >
+                  {deletingSession ? 'Deleting…' : 'Delete empty session'}
+                </button>
+              )}
             </div>
           )}
         </div>

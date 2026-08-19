@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import type { Player, Session, TeamSlot } from '@/lib/types'
 import { LocationPill } from '@/components/courtside/LocationPill'
+import { PastSessionBanner } from '@/components/courtside/PastSessionBanner'
 
 function shortName(p: Player): string {
   return p.nickname ?? p.name.split(' ')[0]
@@ -33,6 +34,8 @@ interface Props {
   location: string
   session: Session
   onLocationChange: (loc: string) => void
+  pastSessionDate?: string | null
+  persistDefaultLocation?: boolean
 }
 
 export function CheckIn({
@@ -50,6 +53,8 @@ export function CheckIn({
   location,
   session,
   onLocationChange,
+  pastSessionDate,
+  persistDefaultLocation = true,
 }: Props) {
   const [search, setSearch] = useState('')
   const [inactiveMode, setInactiveMode] = useState(false)
@@ -132,6 +137,7 @@ export function CheckIn({
 
   return (
     <div className={containerClass}>
+      <PastSessionBanner date={pastSessionDate ?? null} />
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-1">
         <div className="flex items-center justify-between gap-2">
@@ -146,6 +152,7 @@ export function CheckIn({
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
+              persistDefault={persistDefaultLocation}
             />
           </div>
           <div className="flex items-center gap-1.5 flex-none">

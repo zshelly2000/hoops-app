@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { CheckIn } from '@/components/courtside/CheckIn'
 import { PaintMode } from '@/components/courtside/PaintMode'
 import { ScoreKeypad } from '@/components/courtside/ScoreKeypad'
@@ -92,12 +92,39 @@ function sortPlayers(players: Player[], lastPlayed: Record<string, string>): Pla
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// useSearchParams requires a Suspense boundary under the Next 14 App Router or
+// the /courtside page fails to build. The whole flow lives in CourtsideInner;
+// this thin wrapper is the boundary. Fallback is null (the inner component shows
+// its own loading state once mounted).
 export default function CourtsidePage() {
+  return (
+    <Suspense fallback={null}>
+      <CourtsideInner />
+    </Suspense>
+  )
+}
+
+function CourtsideInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // A specific session to load by ID (append / past-session mode). Present when
+  // the session detail page navigated here with ?session=<id>. When set, it wins
+  // outright over today-resolution — an unresolvable id is an error state, never
+  // a silent fallthrough to "start a new run today".
+  const requestedSessionId = searchParams.get('session')
+
+  // Today's local date (en-CA → YYYY-MM-DD) — computed once so past-mode
+  // detection is stable across the session and never does UTC date math.
+  const [today] = useState(() => new Date().toLocaleDateString('en-CA'))
 
   // Navigation
   const [screen, setScreen] = useState<Screen>('start')
   const [squadOverlayOpen, setSquadOverlayOpen] = useState(false)
+
+  // Append / past-session mode
+  const [loadedById, setLoadedById] = useState(false)
+  const [loadedSessionComplete, setLoadedSessionComplete] = useState<boolean | null>(null)
+  const [resolveError, setResolveError] = useState(false)
 
   // Data
   const [allPlayers, setAllPlayers] = useState<Player[]>([])
@@ -140,6 +167,34 @@ export default function CourtsidePage() {
   const { queue, enqueue, dequeueFirst, removeGame, removeReactivate } = useRetryQueue()
   const processingRef = useRef(false)
 
+  // Past-session mode: a session loaded by ID whose date is not today. Drives the
+  // warning banner, blocks the start screen, and changes exit behavior. A by-ID
+  // load of TODAY's session behaves exactly like normal same-day mode (no banner,
+  // no special-casing) per requirement.
+  const isPastMode = loadedById && session !== null && session.session_date !== today
+
+  // Restore any persisted squad + in-progress draft for a resolved session. Shared
+  // by today-resolution and by-ID (append) resolution so both paths behave
+  // identically. With no persisted state it lands on an empty check-in.
+  function restoreDraftAndSquad(sess: Session) {
+    const savedSquad = loadJSON<string[]>(squadKey(sess.id))
+    if (savedSquad) {
+      setSquadIds(new Set(savedSquad))
+      setSquadOrder(savedSquad)
+    }
+    const draft = loadJSON<{ assignments: [string, TeamSlot][]; t1: string; t2: string; screen: Screen }>(draftKey(sess.id))
+    if (draft) {
+      setAssignments(new Map(draft.assignments))
+      setT1Score(draft.t1)
+      setT2Score(draft.t2)
+      const validScreen = draft.screen === 'paint' || draft.screen === 'score' ? draft.screen : 'checkin'
+      const hasSquad = savedSquad && savedSquad.length >= 2
+      setScreen(hasSquad ? validScreen : 'checkin')
+    } else {
+      setScreen(savedSquad && savedSquad.length >= 2 ? 'paint' : 'checkin')
+    }
+  }
+
   // ─── Init ────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -174,7 +229,36 @@ export default function CourtsidePage() {
         }
         setLastPlayed(lp)
 
-        const today = new Date().toLocaleDateString('en-CA')
+        // Append / past-session mode: a specific session was requested by ID.
+        // This resolution WINS OUTRIGHT — it never falls through to today's
+        // resolution. An unresolvable id is a hard error state, not a "start a
+        // new run today" fallback.
+        if (requestedSessionId) {
+          try {
+            const [sRes, gRes] = await Promise.all([
+              fetch(`/api/sessions/${requestedSessionId}`, { cache: 'no-store' }),
+              fetch(`/api/sessions/${requestedSessionId}/games`, { cache: 'no-store' }),
+            ])
+            if (!sRes.ok) { setResolveError(true); return }
+            const sess = await sRes.json() as Session
+            setSession(sess)
+            setLoadedById(true)
+            setLoadedSessionComplete(sess.is_complete)
+            if (sess.location) setLocation(sess.location)
+            if (gRes.ok) {
+              const games = await gRes.json() as SavedGameEntry[]
+              setSavedGames(games)
+              setGameCount(games.length)
+            }
+            restoreDraftAndSquad(sess)
+            // Spare only this session's keys; clean up any other session's orphans.
+            purgeSessionKeys({ spareSessionId: sess.id })
+          } catch {
+            setResolveError(true)
+          }
+          return
+        }
+
         const sessRes = await fetch(`/api/sessions?date=${today}`, { cache: 'no-store' })
         if (sessRes.ok) {
           const sessions = await sessRes.json() as Session[]
@@ -190,25 +274,7 @@ export default function CourtsidePage() {
               setGameCount(games.length)
             }
 
-            // Restore squad
-            const savedSquad = loadJSON<string[]>(squadKey(todaySession.id))
-            if (savedSquad) {
-              setSquadIds(new Set(savedSquad))
-              setSquadOrder(savedSquad)
-            }
-
-            // Restore draft
-            const draft = loadJSON<{ assignments: [string, TeamSlot][]; t1: string; t2: string; screen: Screen }>(draftKey(todaySession.id))
-            if (draft) {
-              setAssignments(new Map(draft.assignments))
-              setT1Score(draft.t1)
-              setT2Score(draft.t2)
-              const validScreen = draft.screen === 'paint' || draft.screen === 'score' ? draft.screen : 'checkin'
-              const hasSquad = savedSquad && savedSquad.length >= 2
-              setScreen(hasSquad ? validScreen : 'checkin')
-            } else {
-              setScreen(savedSquad && savedSquad.length >= 2 ? 'paint' : 'checkin')
-            }
+            restoreDraftAndSquad(todaySession)
 
             // Ongoing housekeeping: drop squad/draft keys from any other
             // session (e.g. sessions that never went through End Session).
@@ -224,7 +290,8 @@ export default function CourtsidePage() {
       }
     }
     void init()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedSessionId])
 
   // ─── Draft persistence ────────────────────────────────────────────────────────
 
@@ -362,6 +429,27 @@ export default function CourtsidePage() {
 
       setSavedGames((prev) => prev.filter((g) => g.id !== gameId))
       setGameCount((c) => c - 1)
+
+      if (wasGame1 && isPastMode) {
+        // Defensive: undoing the only game of an appended-to session auto-deletes
+        // it server-side. In past mode we must NEVER surface the start screen —
+        // leave for the sessions list. (Entry points never target a 0-game
+        // session, so a past session always has prior games and this branch is a
+        // safety net, not a normal path.)
+        if (session) {
+          localStorage.removeItem(squadKey(session.id))
+          localStorage.removeItem(draftKey(session.id))
+        }
+        if (body.prev_session_id) {
+          fetch('/api/narratives/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: body.prev_session_id }),
+          }).catch(() => {})
+        }
+        router.push('/sessions')
+        return
+      }
 
       if (wasGame1) {
         // Session was auto-deleted. Stash squad + teams so the next session can restore them.
@@ -699,11 +787,40 @@ export default function CourtsidePage() {
       return
     }
 
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' })
-      if (!res.ok) throw new Error('Failed to end session')
-    } catch {
-      showToast('Failed to end session', 'error')
+    // Conditional completion. A session loaded by ID that was ALREADY complete
+    // (the common append case) must not be re-completed — that would re-stamp
+    // completed_at and lose the original completion time. A loaded session that
+    // is still open (a stranded session being closed out) DOES get completed
+    // here. A normal same-day run is always completed.
+    const alreadyComplete = loadedById && loadedSessionComplete === true
+    if (!alreadyComplete) {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/complete`, { method: 'PATCH' })
+        if (!res.ok) throw new Error('Failed to end session')
+      } catch {
+        showToast('Failed to end session', 'error')
+        return
+      }
+    }
+
+    // Narrative regeneration is always browser-fired (Vercel kills server-side
+    // fire-and-forget). Same call for both a fresh run and a past-session edit.
+    fetch('/api/narratives/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {})
+
+    localStorage.removeItem(squadKey(sessionId))
+    localStorage.removeItem(draftKey(sessionId))
+
+    if (isPastMode) {
+      // Past-session edit: never surface the "Start Today's Run" screen. Leave
+      // courtside for the session's detail page, where the (regenerating) Rundown
+      // and games are shown.
+      setShowEndSession(false)
+      setShowLocationChange(false)
+      router.push(`/sessions/${sessionId}`)
       return
     }
 
@@ -719,14 +836,6 @@ export default function CourtsidePage() {
     setSquadIds(new Set())
     setSquadOrder([])
     setScreen('start')
-    localStorage.removeItem(squadKey(sessionId))
-    localStorage.removeItem(draftKey(sessionId))
-
-    fetch('/api/narratives/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId }),
-    }).catch(() => {})
   }
 
   // ─── Discard session (zero games only) ────────────────────────────────────────
@@ -771,7 +880,10 @@ export default function CourtsidePage() {
 
   function handleLocationChange(loc: string) {
     setLocation(loc)
-    saveDefaultLocation(loc)
+    // In past-session mode, correcting the venue must not overwrite the courtside
+    // default used for new same-day runs. (LocationPill enforces the same via
+    // persistDefault; this guards the page-level callback path too.)
+    if (!isPastMode) saveDefaultLocation(loc)
   }
 
   // ─── Squad overlay ────────────────────────────────────────────────────────────
@@ -806,12 +918,35 @@ export default function CourtsidePage() {
     )
   }
 
+  // A requested ?session that could not be resolved is an explicit error state —
+  // never a silent fallthrough to today-resolution or the start screen.
+  if (resolveError) {
+    return (
+      <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-[#08080e] px-6 text-center">
+        <div className="text-4xl">🤔</div>
+        <p className="text-[#f0f0f8] font-bold">Couldn&apos;t open that session</p>
+        <p className="text-sm text-[#94a3b8]">It may have been deleted or moved.</p>
+        <Link
+          href="/sessions"
+          className="mt-2 rounded-xl border border-white/[.06] px-4 py-2.5 text-sm font-bold text-[#94a3b8] transition-colors hover:text-[#f0f0f8]"
+        >
+          ← Back to Sessions
+        </Link>
+      </div>
+    )
+  }
+
+  // Derived props for in-session screens: the past-session banner date (null in
+  // normal same-day mode) and whether venue changes persist as the courtside default.
+  const pastSessionDate = isPastMode && session ? session.session_date : null
+  const persistDefaultLocation = !isPastMode
+
   // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <>
-      {/* ── Start screen ── */}
-      {screen === 'start' && (
+      {/* ── Start screen (never reachable in past-session mode) ── */}
+      {screen === 'start' && !isPastMode && (
         <main className="flex h-[100dvh] flex-col items-center justify-center bg-canvas px-6 pb-24">
           <div className="w-full max-w-sm text-center">
             <div className="mb-4 text-5xl">🏀</div>
@@ -863,6 +998,8 @@ export default function CourtsidePage() {
           location={location}
           session={session}
           onLocationChange={handleLocationChange}
+          pastSessionDate={pastSessionDate}
+          persistDefaultLocation={persistDefaultLocation}
         />
       )}
 
@@ -884,6 +1021,8 @@ export default function CourtsidePage() {
           session={session}
           onLocationChange={handleLocationChange}
           squadCount={squadIds.size}
+          pastSessionDate={pastSessionDate}
+          persistDefaultLocation={persistDefaultLocation}
         />
       )}
 
@@ -907,6 +1046,8 @@ export default function CourtsidePage() {
           onEndSession={() => setShowEndSession(true)}
           onOpenNav={() => setShowNavSheet(true)}
           squadCount={squadIds.size}
+          pastSessionDate={pastSessionDate}
+          persistDefaultLocation={persistDefaultLocation}
         />
       )}
 
@@ -926,6 +1067,8 @@ export default function CourtsidePage() {
           session={session}
           onLocationChange={handleLocationChange}
           squadCount={squadIds.size}
+          pastSessionDate={pastSessionDate}
+          persistDefaultLocation={persistDefaultLocation}
         />
       )}
 
@@ -955,6 +1098,8 @@ export default function CourtsidePage() {
             location={location}
             session={session}
             onLocationChange={handleLocationChange}
+            pastSessionDate={pastSessionDate}
+            persistDefaultLocation={persistDefaultLocation}
           />
         </div>
       )}
@@ -973,10 +1118,14 @@ export default function CourtsidePage() {
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60">
           <div className="w-full max-w-lg rounded-t-3xl bg-[#111118] px-6 pb-12 pt-6 shadow-2xl">
             <div className="mb-1 text-center text-xl font-black text-[#f0f0f8]">
-              End today&apos;s run?
+              {isPastMode
+                ? `Finish editing ${new Date(session.session_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}?`
+                : "End today's run?"}
             </div>
             <p className="mb-1 text-center text-sm text-[#94a3b8]">
-              This will generate your Rundown story.
+              {isPastMode
+                ? "This updates that session's Rundown story."
+                : 'This will generate your Rundown story.'}
             </p>
             {queue.some((i) => i.type === 'game') && (
               <p className="mb-1 text-center text-xs font-bold text-amber-400">
@@ -998,8 +1147,9 @@ export default function CourtsidePage() {
               <InlineLocationPicker
                 sessionId={session.id}
                 location={location}
-                onLocationChange={(loc) => { setLocation(loc); saveDefaultLocation(loc) }}
+                onLocationChange={handleLocationChange}
                 onClose={() => setShowLocationChange(false)}
+                persistDefault={persistDefaultLocation}
               />
             )}
             <div className="mt-4 grid grid-cols-2 gap-4">
@@ -1013,7 +1163,7 @@ export default function CourtsidePage() {
                 onClick={() => void handleEndSession()}
                 className="rounded-2xl border border-white/[.06] py-4 text-base font-bold text-[#94a3b8] transition-all hover:bg-[#1a1a28] active:scale-95"
               >
-                End Session
+                {isPastMode ? 'Save & Close' : 'End Session'}
               </button>
             </div>
           </div>

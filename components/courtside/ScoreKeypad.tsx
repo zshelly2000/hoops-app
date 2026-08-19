@@ -5,6 +5,7 @@ import type { Player, Session } from '@/lib/types'
 import { LocationPill } from '@/components/courtside/LocationPill'
 import { GameLogStrip } from '@/components/courtside/GameLogStrip'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
+import { PastSessionBanner } from '@/components/courtside/PastSessionBanner'
 
 function shortName(p: Player): string {
   return p.nickname ?? p.name.split(' ')[0]
@@ -45,6 +46,8 @@ interface Props {
   onEndSession: () => void
   onOpenNav: () => void
   squadCount: number
+  pastSessionDate?: string | null
+  persistDefaultLocation?: boolean
 }
 
 export function ScoreKeypad({
@@ -65,6 +68,8 @@ export function ScoreKeypad({
   onEndSession,
   onOpenNav,
   squadCount,
+  pastSessionDate,
+  persistDefaultLocation = true,
 }: Props) {
   const [focus, setFocus] = useState<1 | 2>(1)
   // Increments per entry on each card; used as a React key to re-trigger the pop animation
@@ -102,6 +107,7 @@ export function ScoreKeypad({
 
   return (
     <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto overflow-hidden">
+      <PastSessionBanner date={pastSessionDate ?? null} />
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-0">
         <div className="flex items-center justify-between gap-2">
@@ -114,6 +120,7 @@ export function ScoreKeypad({
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
+              persistDefault={persistDefaultLocation}
             />
           </div>
           <div className="flex items-center gap-1.5 flex-none">

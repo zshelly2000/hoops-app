@@ -4,6 +4,7 @@ import type { Session } from '@/lib/types'
 import { LocationPill } from '@/components/courtside/LocationPill'
 import { GameLogStrip } from '@/components/courtside/GameLogStrip'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
+import { PastSessionBanner } from '@/components/courtside/PastSessionBanner'
 
 interface Props {
   gameNumber: number
@@ -19,6 +20,8 @@ interface Props {
   session: Session
   onLocationChange: (loc: string) => void
   squadCount: number
+  pastSessionDate?: string | null
+  persistDefaultLocation?: boolean
 }
 
 export function PostGameChips({
@@ -35,9 +38,12 @@ export function PostGameChips({
   session,
   onLocationChange,
   squadCount,
+  pastSessionDate,
+  persistDefaultLocation = true,
 }: Props) {
   return (
     <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto overflow-hidden">
+      <PastSessionBanner date={pastSessionDate ?? null} />
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-0">
         <div className="flex items-center justify-between gap-2">
@@ -50,6 +56,7 @@ export function PostGameChips({
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
+              persistDefault={persistDefaultLocation}
             />
           </div>
           <div className="flex items-center gap-1.5 flex-none">
