@@ -5,6 +5,7 @@ import type { Player, Session, TeamSlot } from '@/lib/types'
 import { LocationPill } from '@/components/courtside/LocationPill'
 import { GameLogStrip } from '@/components/courtside/GameLogStrip'
 import type { SavedGameEntry } from '@/components/courtside/GameLogStrip'
+import { PastSessionBanner } from '@/components/courtside/PastSessionBanner'
 
 function shortName(p: Player): string {
   return p.nickname ?? p.name.split(' ')[0]
@@ -26,6 +27,8 @@ interface Props {
   session: Session
   onLocationChange: (loc: string) => void
   squadCount: number
+  pastSessionDate?: string | null
+  persistDefaultLocation?: boolean
 }
 
 export function PaintMode({
@@ -44,6 +47,8 @@ export function PaintMode({
   session,
   onLocationChange,
   squadCount,
+  pastSessionDate,
+  persistDefaultLocation = true,
 }: Props) {
   const t1Count = useMemo(
     () => squadPlayers.filter((p) => assignments.get(p.id) === 1).length,
@@ -92,6 +97,7 @@ export function PaintMode({
 
   return (
     <div className="flex flex-col h-[100dvh] max-w-[430px] mx-auto overflow-hidden">
+      <PastSessionBanner date={pastSessionDate ?? null} />
       {/* Pinned header */}
       <div className="flex-none px-3.5 pt-2.5 pb-0">
         <div className="flex items-center justify-between gap-2">
@@ -104,6 +110,7 @@ export function PaintMode({
               sessionId={session.id}
               location={location}
               onLocationChange={onLocationChange}
+              persistDefault={persistDefaultLocation}
             />
           </div>
           <div className="flex items-center gap-1.5 flex-none">

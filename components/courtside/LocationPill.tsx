@@ -26,6 +26,9 @@ interface Props {
   sessionId: string | null
   location: string
   onLocationChange: (loc: string) => void
+  /** When false (past-session mode) the chosen venue still PATCHes the session
+   *  as a correction, but is NOT written to the courtside default. Default true. */
+  persistDefault?: boolean
 }
 
 interface InlinePickerProps {
@@ -33,16 +36,17 @@ interface InlinePickerProps {
   location: string
   onLocationChange: (loc: string) => void
   onClose: () => void
+  persistDefault?: boolean
 }
 
-export function InlineLocationPicker({ sessionId, location, onLocationChange, onClose }: InlinePickerProps) {
+export function InlineLocationPicker({ sessionId, location, onLocationChange, onClose, persistDefault = true }: InlinePickerProps) {
   const [otherMode, setOtherMode] = useState(false)
   const [otherValue, setOtherValue] = useState('')
 
   async function applyLocation(loc: string) {
     if (!loc.trim()) return
     onLocationChange(loc)
-    saveDefaultLocation(loc)
+    if (persistDefault) saveDefaultLocation(loc)
     if (sessionId) {
       await fetch(`/api/sessions/${sessionId}`, {
         method: 'PATCH',
@@ -100,7 +104,7 @@ export function InlineLocationPicker({ sessionId, location, onLocationChange, on
   )
 }
 
-export function LocationPill({ sessionId, location, onLocationChange }: Props) {
+export function LocationPill({ sessionId, location, onLocationChange, persistDefault = true }: Props) {
   const [open, setOpen] = useState(false)
   const [otherMode, setOtherMode] = useState(false)
   const [otherValue, setOtherValue] = useState('')
@@ -125,7 +129,7 @@ export function LocationPill({ sessionId, location, onLocationChange }: Props) {
     if (!loc.trim()) return
     setSaving(true)
     onLocationChange(loc)
-    saveDefaultLocation(loc)
+    if (persistDefault) saveDefaultLocation(loc)
     setOpen(false)
     setOtherMode(false)
     setOtherValue('')

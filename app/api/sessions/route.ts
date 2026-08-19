@@ -16,6 +16,29 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const date = searchParams.get('date')
+  const stranded = searchParams.get('stranded')
+
+  if (stranded) {
+    // Recovery surface: open (is_complete=false) sessions with ZERO games. These
+    // are invisible to the games!inner list query below, so a stranded empty
+    // session can never be found through the normal UI. A left-join embed
+    // (games(id), no !inner) returns every open session with its games array;
+    // we keep only the ones whose array is empty. Universe-scoped.
+    const { data, error } = await supabase
+      .from('sessions')
+      .select('*, games(id)')
+      .eq('universe_id', universeId)
+      .eq('is_complete', false)
+      .order('session_date', { ascending: false })
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500, headers: NO_CACHE })
+    }
+
+    const rows = (data as unknown as (Session & { games: { id: string }[] })[]) ?? []
+    const empty = rows.filter((s) => (s.games?.length ?? 0) === 0)
+    return NextResponse.json(empty as unknown as Session[], { headers: NO_CACHE })
+  }
 
   if (date) {
     // Courtside uses ?date= to look up the active session for a specific day.
